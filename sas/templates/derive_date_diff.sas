@@ -1,0 +1,11 @@
+%macro derive_date_diff(outds=, inds=, targetvar=, startvar=, endvar=);
+data &outds;
+    set &inds;
+    if not missing(&startvar) and not missing(&endvar) then do;
+        &targetvar = &endvar - &startvar + 1;
+    end;
+    else do;
+        &targetvar = .;
+    end;
+run;
+%mend derive_date_diff;

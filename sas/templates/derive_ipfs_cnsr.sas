@@ -1,0 +1,15 @@
+%macro derive_ipfs_cnsr(outds=, inds=, targetvar=, datevar=, censorvar=, iupd_fl=, conf_dt=, deathvar=);
+data &outds;
+    set &inds;
+    if &iupd_fl = 'Y' or not missing(&deathvar) then do;
+        &targetvar = 0;
+        if not missing(&conf_dt) and not missing(&deathvar) then &datevar = min(&conf_dt, &deathvar);
+        else if not missing(&conf_dt) then &datevar = &conf_dt;
+        else &datevar = &deathvar;
+    end;
+    else do;
+        &targetvar = 1;
+        &datevar = &censorvar;
+    end;
+run;
+%mend derive_ipfs_cnsr;

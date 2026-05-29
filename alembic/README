@@ -1,0 +1,4 @@
+Generic single-database configuration for Alembic schema migrations.
+To run migrations:
+$ alembic revision --autogenerate -m "Baseline schema"
+$ alembic upgrade head

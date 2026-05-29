@@ -1,0 +1,15 @@
+%macro derive_event_flag(outds=, inds=, targetvar=, datevar=, censorvar=, pdvar=, deathvar=);
+data &outds;
+    set &inds;
+    if not missing(&pdvar) or not missing(&deathvar) then do;
+        &targetvar = 0;
+        if not missing(&pdvar) and not missing(&deathvar) then &datevar = min(&pdvar, &deathvar);
+        else if not missing(&pdvar) then &datevar = &pdvar;
+        else &datevar = &deathvar;
+    end;
+    else do;
+        &targetvar = 1;
+        &datevar = &censorvar;
+    end;
+run;
+%mend derive_event_flag;
