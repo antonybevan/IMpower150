@@ -100,6 +100,7 @@ class PipelineOrchestrator:
         print("\n>>> ORCHESTRATOR: Building semantic lineage graph...")
         graph_builder = SemanticGraphBuilder(db_path=self.db_path)
         graph_builder.build_graph()
+        graph_builder.export_to_rdf(os.path.join(self.output_dir, "submission", "lineage_ontology.ttl"))
         
         # 6. Run Conformance & QC Engine
         print("\n>>> ORCHESTRATOR: Running QC conformance suite...")

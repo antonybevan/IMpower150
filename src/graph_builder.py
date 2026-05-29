@@ -237,6 +237,109 @@ class SemanticGraphBuilder:
         session.close()
         return gaps
 
+    def export_to_rdf(self, output_path='outputs/submission/lineage_ontology.ttl'):
+        """Exports the DiGraph lineage representation to standard W3C RDF Turtle (.ttl) format."""
+        import os
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        
+        ttl_lines = [
+            "@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .",
+            "@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .",
+            "@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .",
+            "@prefix study: <https://hoffmann-laroche.com/study/GO29436#> .",
+            "@prefix cosmos: <https://cosmos.cdisc.org/biomedical-concept#> .",
+            "@prefix m11: <https://ich.org/m11-protocol#> .",
+            "@prefix ich: <https://ich.org/ich-e9-r1#> .",
+            "@prefix cdisc: <https://cdisc.org/standards#> .",
+            "@prefix arm: <https://cdisc.org/arm/v1.0#> .",
+            "",
+            "# --- RDF Clinical Ontology Classes ---",
+            "study:ProtocolObjective rdf:type rdfs:Class .",
+            "study:BiomedicalConcept rdf:type rdfs:Class .",
+            "study:EndpointDefinition rdf:type rdfs:Class .",
+            "study:Estimand rdf:type rdfs:Class .",
+            "study:DerivationRule rdf:type rdfs:Class .",
+            "study:Variable rdf:type rdfs:Class .",
+            "study:AnalysisResult rdf:type rdfs:Class .",
+            "study:ReviewerArtifact rdf:type rdfs:Class .",
+            "",
+            "# --- RDF Properties ---",
+            "study:serves rdf:type rdf:Property .",
+            "study:measures rdf:type rdf:Property .",
+            "study:quantifies rdf:type rdf:Property .",
+            "study:implementedBy rdf:type rdf:Property .",
+            "study:derives rdf:type rdf:Property .",
+            "study:realizedBy rdf:type rdf:Property .",
+            "study:populates rdf:type rdf:Property .",
+            "study:supports rdf:type rdf:Property .",
+            "study:generates rdf:type rdf:Property .",
+            "study:outputs rdf:type rdf:Property .",
+            "study:producesArtifact rdf:type rdf:Property .",
+            "",
+            "# --- Active Lineage Node Assertions ---"
+        ]
+        
+        # Helper to clean labels for turtle strings
+        def clean_lbl(s):
+            return str(s).replace('"', '\\"').replace('\n', ' ')
+
+        # 1. Assert nodes
+        for n, data in self.graph.nodes(data=True):
+            ntype = data.get("type", "UNKNOWN")
+            label = clean_lbl(data.get("label", n))
+            
+            # Map type to RDF class
+            class_map = {
+                "OBJECTIVE": "m11:ProtocolObjective",
+                "CONCEPT": "cosmos:BiomedicalConcept",
+                "ENDPOINT": "study:EndpointDefinition",
+                "ESTIMAND": "ich:Estimand",
+                "RULE": "study:DerivationRule",
+                "VARIABLE": "cdisc:Variable",
+                "RESULT": "arm:AnalysisResult",
+                "ARTIFACT": "study:ReviewerArtifact"
+            }
+            rdf_class = class_map.get(ntype, "rdfs:Resource")
+            
+            ttl_lines.append(f"study:{n} rdf:type {rdf_class} ;")
+            ttl_lines.append(f"    rdfs:label \"{label}\" ;")
+            
+            # Add specific attributes as comments/literal values
+            if ntype == "CONCEPT" and data.get("cosmos_id"):
+                ttl_lines.append(f"    cosmos:id \"{data['cosmos_id']}\" ;")
+            elif ntype == "OBJECTIVE" and data.get("section"):
+                ttl_lines.append(f"    m11:section \"{data['section']}\" ;")
+            
+            ttl_lines.append("    rdfs:comment \"computable lineage node\" .")
+            ttl_lines.append("")
+            
+        # 2. Assert edges
+        ttl_lines.append("# --- Active Lineage Edge Relationship Triples ---")
+        for u, v, data in self.graph.edges(data=True):
+            rel = data.get("rel", "linked_to")
+            # Map simple relation names to predicates
+            pred_map = {
+                "serves": "study:serves",
+                "measures": "study:measures",
+                "quantifies": "study:quantifies",
+                "implemented_by": "study:implementedBy",
+                "derives": "study:derives",
+                "realized_by": "study:realizedBy",
+                "populates": "study:populates",
+                "supports": "study:supports",
+                "generates": "study:generates",
+                "outputs": "study:outputs",
+                "produces_artifact": "study:producesArtifact"
+            }
+            predicate = pred_map.get(rel, "rdfs:seeAlso")
+            ttl_lines.append(f"study:{u} {predicate} study:{v} .")
+            
+        with open(output_path, 'w', encoding='utf-8') as f:
+            f.write("\n".join(ttl_lines))
+            
+        print(f"[SemanticGraphBuilder] Exported RDF lineage ontology to: {output_path}")
+        return output_path
+
 if __name__ == '__main__':
     builder = SemanticGraphBuilder()
     g = builder.build_graph()
