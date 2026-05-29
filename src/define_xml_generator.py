@@ -3,7 +3,7 @@ import json
 import xml.etree.ElementTree as ET
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from models import BiomedicalConcept, EndpointDefinition, AnalysisResult, Variable, WhereClause
+from models import BiomedicalConcept, EndpointDefinition, AnalysisResult, ParameterVariableMetadata, Variable, WhereClause
 
 class SubmissionGenerator:
     def __init__(self, db_path='metadata.db', output_dir='outputs/submission'):
@@ -75,6 +75,12 @@ class SubmissionGenerator:
         }
         
         variables = session.query(Variable).all()
+        param_metadata = session.query(ParameterVariableMetadata).all()
+        rule_lookup = {}
+        for row in param_metadata:
+            if row.rule_id:
+                rule_lookup.setdefault((row.dataset, row.variable), set()).add(row.rule_id)
+        rule_lookup = {key: sorted(value) for key, value in rule_lookup.items()}
         from models import DerivationRule
         
         for ds, ds_meta in datasets_metadata.items():
@@ -102,10 +108,11 @@ class SubmissionGenerator:
                     "OrderNumber": str(idx),
                     "Mandatory": "Yes" if var.variable in ("STUDYID", "USUBJID", "PARAMCD") else "No"
                 })
-                # Check if there is an associated derivation rule to link as MethodOID
-                rule = session.query(DerivationRule).filter_by(target_variable=var.variable).first()
-                if rule:
-                    item_ref.set("MethodOID", f"MT.{rule.rule_id}")
+                # Attach MethodOID only for unambiguous dataset-variable derivations.
+                # Multi-PARAMCD variables are documented in ARM descriptions below.
+                mapped_rules = rule_lookup.get((ds, var.variable), [])
+                if len(mapped_rules) == 1:
+                    item_ref.set("MethodOID", f"MT.{mapped_rules[0]}")
             
             # Add archive location leaf element pointing to physical transport file
             leaf = ET.SubElement(item_group, f"{{{DEF_NS}}}leaf", {
@@ -135,9 +142,14 @@ class SubmissionGenerator:
             desc_el = ET.SubElement(item_def, f"{{{ODM_NS}}}Description")
             ET.SubElement(desc_el, f"{{{ODM_NS}}}TranslatedText", {"xml:lang": "en"}).text = var.role or var.variable
             
-            if var.bc_id:
-                # Add CommentRef pointing to the Biomedical Concept comment
-                ET.SubElement(item_def, f"{{{DEF_NS}}}CommentRef", {"CommentOID": f"COM.{var.bc_id}"})
+            item_concepts = sorted({
+                row.bc_id for row in param_metadata
+                if row.dataset == var.dataset and row.variable == var.variable and row.bc_id
+            })
+            if not item_concepts and var.bc_id:
+                item_concepts = [var.bc_id]
+            for bc_id in item_concepts:
+                ET.SubElement(item_def, f"{{{DEF_NS}}}CommentRef", {"CommentOID": f"COM.{bc_id}"})
                 
         # 4. Add CodeLists for Controlled Terminology
         paramcd_cl = ET.SubElement(meta_data, f"{{{ODM_NS}}}CodeList", {
@@ -182,7 +194,12 @@ class SubmissionGenerator:
             })
             # Link back to Estimand and Endpoint
             desc_el = ET.SubElement(result_def, f"{{{ARM_NS}}}Description")
-            desc_el.text = f"Endpoint: {res.endpoint_id} serving Estimand {res.estimand_id}. Method: {res.stat_method}. Test: {res.stat_test}. TFL Ref: {res.tfl_reference}."
+            derivation_rules = sorted({
+                row.rule_id for row in param_metadata
+                if row.dataset == res.dataset and row.paramcd == res.paramcd and row.rule_id
+            })
+            rule_text = ", ".join(derivation_rules) if derivation_rules else "No parameter-level derivation rule registered"
+            desc_el.text = f"Endpoint: {res.endpoint_id} serving Estimand {res.estimand_id}. Method: {res.stat_method}. Test: {res.stat_test}. TFL Ref: {res.tfl_reference}. Parameter-level derivations: {rule_text}."
             
             if res.where_clause_id:
                 wc = session.query(WhereClause).filter_by(where_clause_id=res.where_clause_id).first()
@@ -205,7 +222,138 @@ class SubmissionGenerator:
         
         session.close()
         print(f"[SubmissionGenerator] Generated Define.xml v2.1 submission file: {xml_path}")
+        
+        # Self-validate the generated XML file
+        is_valid, validation_errors = self.validate_define_xml(xml_path)
+        if not is_valid:
+            print(f"[SubmissionGenerator] [Warning] Define-XML validation failed with {len(validation_errors)} errors!")
+            
         return xml_path
+
+    def validate_define_xml(self, xml_path):
+        """
+        Runs programmatic Define-XML v2.1 integrity validation checking
+        structure, namespaces, references, and controlled terminology.
+        """
+        print(f"[Validator] Starting programmatic Define-XML 2.1 integrity validation on {xml_path}...")
+        try:
+            tree = ET.parse(xml_path)
+            root = tree.getroot()
+        except Exception as e:
+            return False, [f"XML parsing failed: {e}"]
+            
+        errors = []
+        
+        # 1. Namespace & Root tag validation
+        ODM_NS = 'http://www.cdisc.org/ns/odm/v1.3'
+        DEF_NS = 'http://www.cdisc.org/ns/def/v2.1'
+        
+        if root.tag != f"{{{ODM_NS}}}ODM":
+            errors.append(f"Root tag must be {{{ODM_NS}}}ODM, found {root.tag}")
+            
+        # 2. Extract all defined OIDs and references
+        defined_comments = set()
+        defined_methods = set()
+        defined_codelists = set()
+        defined_items = set()
+        defined_itemgroups = set()
+        
+        referenced_comments = set()
+        referenced_methods = set()
+        referenced_codelists = set()
+        referenced_items = set()
+        
+        # Helper to strip namespace for easy checking
+        def strip_ns(tag):
+            return tag.split('}')[-1] if '}' in tag else tag
+            
+        # Recurse and parse
+        for elem in root.iter():
+            tag = strip_ns(elem.tag)
+            
+            # Record definitions
+            if tag == 'CommentDef':
+                oid = elem.get('OID')
+                if oid: defined_comments.add(oid)
+            elif tag == 'MethodDef':
+                oid = elem.get('OID')
+                if oid: defined_methods.add(oid)
+            elif tag == 'CodeList':
+                oid = elem.get('OID')
+                if oid: defined_codelists.add(oid)
+            elif tag == 'ItemDef':
+                oid = elem.get('OID')
+                if oid: defined_items.add(oid)
+            elif tag == 'ItemGroupDef':
+                oid = elem.get('OID')
+                if oid: defined_itemgroups.add(oid)
+                
+            # Record references
+            if tag == 'CommentRef':
+                oid = elem.get('CommentOID')
+                if oid: referenced_comments.add(oid)
+            elif tag == 'ItemRef':
+                oid = elem.get('ItemOID')
+                if oid: referenced_items.add(oid)
+                method_oid = elem.get('MethodOID')
+                if method_oid: referenced_methods.add(method_oid)
+            elif tag == 'ItemDef':
+                cl_oid = elem.get('CodeListOID')
+                if cl_oid: referenced_codelists.add(cl_oid)
+                
+        # 3. Reference integrity checks (No dangling references)
+        for ref in referenced_comments:
+            if ref not in defined_comments:
+                errors.append(f"Dangling Comment Reference: {ref} is referenced but not defined in CommentDefs")
+                
+        for ref in referenced_methods:
+            if ref not in defined_methods:
+                errors.append(f"Dangling Method Reference: {ref} is referenced but not defined in MethodDefs")
+                
+        for ref in referenced_codelists:
+            if ref not in defined_codelists:
+                errors.append(f"Dangling CodeList Reference: {ref} is referenced but not defined")
+                
+        for ref in referenced_items:
+            if ref not in defined_items:
+                errors.append(f"Dangling Item Reference: {ref} is referenced in ItemGroupDef but not defined in ItemDefs")
+                
+        # 4. Controlled terminology validation
+        paramcd_items = []
+        cnsr_items = []
+        for elem in root.iter():
+            tag = strip_ns(elem.tag)
+            if tag == 'CodeList':
+                oid = elem.get('OID')
+                if oid == 'CL.PARAMCD':
+                    paramcd_items = [item.get('CodedValue') for item in elem.findall(f"{{{ODM_NS}}}CodeListItem")]
+                elif oid == 'CL.CNSR':
+                    cnsr_items = [item.get('CodedValue') for item in elem.findall(f"{{{ODM_NS}}}CodeListItem")]
+                    
+        expected_paramcds = {"PFS", "OS", "iPFS", "DOR", "BOR"}
+        for pc in expected_paramcds:
+            if pc not in paramcd_items:
+                errors.append(f"Missing expected PARAMCD in CodeList: {pc}")
+                
+        expected_cnsrs = {"0", "1"}
+        for c in expected_cnsrs:
+            if c not in cnsr_items:
+                errors.append(f"Missing expected CNSR value in CodeList: {c}")
+                
+        # 5. Empty or incomplete elements
+        for elem in root.iter():
+            tag = strip_ns(elem.tag)
+            if tag in ('ItemDef', 'ItemGroupDef', 'MethodDef', 'CommentDef') and not elem.get('OID'):
+                errors.append(f"Element {tag} is missing required 'OID' attribute")
+                
+        if errors:
+            print(f"[Validator] Validation failed with {len(errors)} errors:")
+            for err in errors:
+                print(f"  • [ERROR] {err}")
+            return False, errors
+            
+        print("[Validator] SUCCESS: Define-XML 2.1 structure and reference integrity verified (0 errors).")
+        return True, []
 
     def generate_sdrg_json_ld(self):
         """Generates a machine-readable JSON-LD Study Data Reviewer Guide (SDRG)."""
@@ -231,6 +379,7 @@ class SubmissionGenerator:
         
         # Build sections based on endpoints and concepts
         endpoints = session.query(EndpointDefinition).all()
+        param_metadata = session.query(ParameterVariableMetadata).all()
         for ep in endpoints:
             bc = session.query(BiomedicalConcept).filter_by(bc_id=ep.bc_id).first()
             bc_name = bc.bc_name if bc else "N/A"
@@ -238,7 +387,13 @@ class SubmissionGenerator:
             
             # Dynamically query active realized variables mapped to this biomedical concept
             var_records = session.query(Variable).filter_by(bc_id=ep.bc_id).all()
-            section_vars = sorted(list(set([f"{v.dataset}.{v.variable}" for v in var_records])))
+            section_vars = set([f"{v.dataset}.{v.variable}" for v in var_records])
+            section_vars.update(
+                f"{row.dataset}.{row.variable}"
+                for row in param_metadata
+                if row.bc_id == ep.bc_id
+            )
+            section_vars = sorted(section_vars)
             if not section_vars:
                 section_vars = ["ADTTE.AVAL", "ADTTE.CNSR"]
                 
@@ -398,7 +553,7 @@ class SubmissionGenerator:
 
     <div class="card">
         <h2>2. Standards Conformance & Submission Scope</h2>
-        <p>This submission fully complies with standard regulatory data schemas: CDISC SDTMIG v3.4 and ADaMIG v1.3. Cryptographic hashes of all derivation rules and execution environments are recorded in the Reproducibility Ledger.</p>
+        <p>This package records the intended CDISC SDTMIG v3.4, ADaMIG v1.3, and Define-XML v2.1 standards scope. Internal XML reference checks, derivation rule hashing, and execution environment hashes are recorded in the reproducibility ledger; external regulatory validation evidence must be attached before final submission.</p>
         <table>
             <thead>
                 <tr>
@@ -411,17 +566,17 @@ class SubmissionGenerator:
                 <tr>
                     <td>CDISC SDTM</td>
                     <td>v3.4</td>
-                    <td>Passed with 0 critical validation errors</td>
+                    <td>Internal scope metadata generated; external SDTM validation evidence required</td>
                 </tr>
                 <tr>
                     <td>CDISC ADaM</td>
                     <td>v1.3</td>
-                    <td>Passed with 0 validation exceptions</td>
+                    <td>Internal ADaM artifact checks generated; external ADaM validation evidence required</td>
                 </tr>
                 <tr>
                     <td>CDISC Define.xml</td>
                     <td>v2.1</td>
-                    <td>Valid and verified against CDISC 360 schemas</td>
+                    <td>Programmatic XML structure and reference integrity checks passed</td>
                 </tr>
             </tbody>
         </table>

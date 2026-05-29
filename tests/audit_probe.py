@@ -2,6 +2,9 @@ import sqlite3
 import duckdb
 import os
 import json
+import xml.etree.ElementTree as ET
+
+import pyreadstat
 
 print("="*80)
 print("  IMPOWER150 EXTENSIVE AUDIT PROBE")
@@ -139,8 +142,13 @@ print("\n[13] OUTPUT ARTIFACTS:")
 artifact_checks = [
     ("outputs/submission/define.xml",   "Define.xml v2.1"),
     ("outputs/submission/sdrg.jsonld",  "JSON-LD SDRG"),
+    ("outputs/submission/sdrg.html",    "HTML SDRG"),
     ("outputs/datasets/adtte.json",     "Dataset-JSON ADTTE"),
     ("outputs/datasets/adtte.xpt",      "SAS XPT ADTTE"),
+    ("outputs/datasets/addor.json",     "Dataset-JSON ADDOR"),
+    ("outputs/datasets/addor.xpt",      "SAS XPT ADDOR"),
+    ("outputs/datasets/adrs.json",      "Dataset-JSON ADRS"),
+    ("outputs/datasets/adrs.xpt",       "SAS XPT ADRS"),
     ("outputs/manifests/env_manifest_RUN_IMPOWER150_2026_05.json", "Environment Manifest"),
 ]
 for path, label in artifact_checks:
@@ -151,15 +159,59 @@ for path, label in artifact_checks:
         print(f"    MISSING {label}")
 
 # ─── Generated SAS programs ────────────────────────────────────────────────────
+print("\n[13b] XPT READABILITY AND TABLE NAMES:")
+for ds_name in ("adtte", "addor", "adrs"):
+    xpt_path = os.path.join("outputs", "datasets", f"{ds_name}.xpt")
+    if not os.path.exists(xpt_path):
+        print(f"    MISSING {xpt_path}")
+        continue
+    try:
+        df, meta = pyreadstat.read_xport(xpt_path)
+        print(f"    OK    {ds_name.upper():<6} records={len(df):>4} table={meta.table_name}")
+    except Exception as exc:
+        print(f"    ERROR {ds_name.upper():<6} unreadable XPT: {exc}")
+
 print("\n[14] GENERATED SAS PROGRAMS:")
-if os.path.exists("sas/programs"):
-    for f in sorted(os.listdir("sas/programs")):
-        size = os.path.getsize(os.path.join("sas/programs", f))
+programs_dir = "outputs/sas_programs"
+if os.path.exists(programs_dir):
+    for f in sorted(os.listdir(programs_dir)):
+        size = os.path.getsize(os.path.join(programs_dir, f))
         print(f"    {f:<45} ({size} bytes)")
 else:
-    print("    sas/programs directory not found")
+    print(f"    {programs_dir} directory not found")
 
 # ─── Framework gaps summary ────────────────────────────────────────────────────
+print("\n[15] DEFINE-XML METHOD LINEAGE CHECK:")
+define_path = "outputs/submission/define.xml"
+method_mismatches = []
+if os.path.exists(define_path):
+    root = ET.parse(define_path).getroot()
+    itemref_methods = {
+        elem.get("ItemOID"): elem.get("MethodOID")
+        for elem in root.iter()
+        if elem.tag.split("}")[-1] == "ItemRef"
+    }
+    expected_methods = {
+        "IT.ADDOR.AVAL": "MT.RULE_DOR_AVAL",
+        "IT.ADDOR.CNSR": "MT.RULE_DOR_CNSR",
+        "IT.ADRS.ORR_FL": "MT.RULE_ORR_FL",
+    }
+    for item_oid, expected in expected_methods.items():
+        observed = itemref_methods.get(item_oid)
+        if observed != expected:
+            method_mismatches.append(f"{item_oid} expected {expected}, observed {observed}")
+    for item_oid in ("IT.ADTTE.AVAL", "IT.ADTTE.CNSR"):
+        if itemref_methods.get(item_oid):
+            method_mismatches.append(f"{item_oid} has ambiguous MethodOID {itemref_methods[item_oid]}")
+    if method_mismatches:
+        for mismatch in method_mismatches:
+            print(f"    ERROR {mismatch}")
+    else:
+        print("    OK    Dataset-variable MethodOID links are unambiguous")
+else:
+    method_mismatches.append("define.xml missing")
+    print("    MISSING define.xml")
+
 print("\n" + "="*80)
 print("  AUDIT GAPS SUMMARY (Framework vs Implementation)")
 print("="*80)
@@ -170,6 +222,9 @@ gaps = []
 import sqlite3 as _s3
 _c = _s3.connect('metadata.db').cursor()
 _c.execute("SELECT COUNT(*) FROM analysis_results"); arm_n = _c.fetchone()[0]
+_c.execute("SELECT COUNT(*) FROM parameter_variable_metadata"); param_meta_n = _c.fetchone()[0]
+if param_meta_n < 9:
+    gaps.append("GAP-02 [HIGH]   parameter_variable_metadata is incomplete; Define-XML lineage can become ambiguous by PARAMCD")
 if arm_n == 0:
     gaps.append("GAP-01 [HIGH]   analysis_results (ARM) table is EMPTY — Phase 2 first-class entity not seeded")
 
@@ -202,6 +257,9 @@ if not os.path.exists("outputs/submission/sdrg.html"):
 # Check lineage_report_generator
 if not os.path.exists("src/lineage_report_generator.py"):
     gaps.append("GAP-08 [LOW]    src/lineage_report_generator.py missing — per-variable HTML lineage reports not implemented")
+
+for mismatch in method_mismatches:
+    gaps.append(f"GAP-10 [HIGH]   Define-XML method lineage mismatch: {mismatch}")
 
 if gaps:
     for g in gaps:

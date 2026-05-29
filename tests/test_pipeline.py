@@ -7,11 +7,12 @@ sys.path.insert(0, os.path.join(_ROOT, 'seeds'))
 
 import json
 import duckdb
+import pyreadstat
 import xml.etree.ElementTree as ET
 from models import init_database
 from rule_parser import RuleParser
 from snapshot_manager import SnapshotManager
-from execution_adapter import MockSASAdapter
+from execution_adapter import ClinicalDerivationAdapter
 from graph_builder import SemanticGraphBuilder
 from qc_engine import QCEngine
 from define_xml_generator import SubmissionGenerator
@@ -62,6 +63,16 @@ def run_e2e_verification_pipeline():
         print(f"  • SUCCESS: Define.xml parses cleanly as well-formed XML!")
         print(f"  • Root tag verified: {root.tag}")
         assert "ODM" in root.tag, "XML root tag should be ODM in ODM namespace"
+        itemref_methods = {
+            elem.get("ItemOID"): elem.get("MethodOID")
+            for elem in root.iter()
+            if elem.tag.split("}")[-1] == "ItemRef"
+        }
+        assert itemref_methods.get("IT.ADDOR.AVAL") == "MT.RULE_DOR_AVAL", "ADDOR.AVAL must link to DOR derivation"
+        assert itemref_methods.get("IT.ADDOR.CNSR") == "MT.RULE_DOR_CNSR", "ADDOR.CNSR must link to DOR censoring derivation"
+        assert itemref_methods.get("IT.ADRS.ORR_FL") == "MT.RULE_ORR_FL", "ADRS.ORR_FL must link to ORR derivation"
+        assert itemref_methods.get("IT.ADTTE.AVAL") is None, "ADTTE.AVAL spans multiple PARAMCD-specific methods and must not carry one ambiguous MethodOID"
+        assert itemref_methods.get("IT.ADTTE.CNSR") is None, "ADTTE.CNSR spans multiple PARAMCD-specific methods and must not carry one ambiguous MethodOID"
     except Exception as ex:
         assert False, f"CRITICAL Define.xml is structurally invalid or prefix is unbound: {ex}"
         
@@ -82,6 +93,23 @@ def run_e2e_verification_pipeline():
     assert "PFS" in seen_params, "PFS parameter missing from ADTTE"
     assert "iPFS" in seen_params, "iPFS parameter missing from ADTTE"
     assert "OS" in seen_params, "OS parameter missing from ADTTE"
+    for ds_name in ("adtte", "addor", "adrs"):
+        xpt_path = os.path.join(output_dir, "datasets", f"{ds_name}.xpt")
+        assert os.path.exists(xpt_path), f"{ds_name}.xpt missing"
+        df, meta = pyreadstat.read_xport(xpt_path)
+        assert len(df) > 0, f"{ds_name}.xpt should contain records"
+        assert meta.table_name.upper() == ds_name.upper(), f"{ds_name}.xpt table name mismatch"
+
+    import sqlite3
+    sqlite_conn = sqlite3.connect(db_path)
+    sqlite_cur = sqlite_conn.cursor()
+    sqlite_cur.execute("SELECT version_num FROM alembic_version")
+    alembic_version = sqlite_cur.fetchone()[0]
+    sqlite_cur.execute("SELECT COUNT(*) FROM parameter_variable_metadata")
+    param_meta_count = sqlite_cur.fetchone()[0]
+    sqlite_conn.close()
+    assert alembic_version == "9f2b7c31d6a4", f"Unexpected Alembic version: {alembic_version}"
+    assert param_meta_count >= 9, "Parameter-level variable metadata must be seeded"
     print("  • SUCCESS: ADTTE dataset contains logically consistent PARAMCD values ('PFS'/'iPFS'/'OS')")
 
     # ─── STEP 5: EVIDENCE-BASED CONFORMANCE QC VERIFICATION ───

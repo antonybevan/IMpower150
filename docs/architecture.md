@@ -74,7 +74,7 @@ Orchestrator.run_pipeline()
     ├── 1. RuleParser.compile_rules()         → Validates approval_status, generates SAS
     ├── 2. seed_arm_data()                    → Ensures ARM metadata present
     ├── 3. SnapshotManager.capture()          → SHA-256 environment fingerprint
-    ├── 4. MockSASAdapter.execute()           → Simulates SAS runtime, writes logs
+    ├── 4. ClinicalDerivationAdapter.execute() → Runs deterministic derivations, writes execution logs
     ├── 5. SASLogParser.parse_log_file()      → Ingests logs to DuckDB
     ├── 6. SemanticGraphBuilder.build_graph() → Builds 8-layer knowledge graph
     ├── 7. QCEngine.run_level1_conformance()  → CORE rule validation

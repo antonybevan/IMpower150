@@ -123,8 +123,8 @@ class QCEngine:
             raise FileNotFoundError(f"Required ADTTE dataset is missing at '{adtte_path}'. Cannot run Level 2 conformance.")
             
         try:
-            from execution_adapter import MockSASAdapter
-            cohort = MockSASAdapter()._generate_clinical_cohort()
+            from execution_adapter import ClinicalDerivationAdapter
+            cohort = ClinicalDerivationAdapter()._generate_clinical_cohort()
             # Map cohort by USUBJID for fast lookup
             cohort_map = {pat["USUBJID"]: pat for pat in cohort}
             

@@ -5,7 +5,7 @@ from sqlalchemy.orm import sessionmaker
 from models import DerivationRule, EndpointDefinition, Estimand, Program
 
 class RuleParser:
-    def __init__(self, db_path='metadata.db', template_dir='sas/templates', output_dir='sas/programs'):
+    def __init__(self, db_path='metadata.db', template_dir='sas/templates', output_dir='outputs/sas_programs'):
         self.db_path = db_path
         self.template_dir = template_dir
         self.output_dir = output_dir
@@ -92,6 +92,7 @@ class RuleParser:
         # Load helper macros
         date_diff_path = os.path.abspath(os.path.join(self.template_dir, 'derive_date_diff.sas'))
         event_flag_path = os.path.abspath(os.path.join(self.template_dir, 'derive_event_flag.sas'))
+        ipfs_cnsr_path = os.path.abspath(os.path.join(self.template_dir, 'derive_ipfs_cnsr.sas'))
         iupd_flag_path = os.path.abspath(os.path.join(self.template_dir, 'derive_iupd_flag.sas'))
         conditional_path = os.path.abspath(os.path.join(self.template_dir, 'derive_conditional.sas'))
         
@@ -128,6 +129,11 @@ class RuleParser:
                     code_block += f"%derive_event_flag(outds=work.out_pfs_cnsr_bicr, inds=work.raw_data, targetvar={rule.target_variable}, datevar=PFSDT_BICR, censorvar=LSTALVDT_BICR, pdvar=PDDT_BICR, deathvar=DTHDT);\n"
                 else:
                     code_block += f"%derive_event_flag(outds=work.out_pfs_cnsr, inds=work.raw_data, targetvar={rule.target_variable}, datevar=PFSDT, censorvar=LSTALVDT, pdvar=PDDT, deathvar=DTHDT);\n"
+            elif endpoint.analysis_concept == 'iPFS':
+                code_block += f'%include "{ipfs_cnsr_path}";\n\n'
+                code_block += f"%derive_ipfs_cnsr(outds=work.out_ipfs_cnsr, inds=work.raw_data, targetvar={rule.target_variable}, datevar=IPFSDT, censorvar=LSTALVDT, iupd_fl=IUPD_FL, conf_dt=CONF_DT, deathvar=DTHDT);\n"
+            elif endpoint.analysis_concept == 'DOR':
+                code_block += f"%derive_event_flag(outds=work.out_dor_cnsr, inds=work.raw_data, targetvar={rule.target_variable}, datevar=DORDT, censorvar=LSTALVDT, pdvar=PDDT, deathvar=DTHDT);\n"
             else:
                 code_block += f"%derive_event_flag(outds=work.out_os_cnsr, inds=work.raw_data, targetvar={rule.target_variable}, datevar=OSDT, censorvar=LSTALVDT, pdvar=., deathvar=DTHDT);\n"
                 

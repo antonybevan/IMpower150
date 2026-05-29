@@ -12,7 +12,7 @@ class ExecutionAdapter(ABC):
         """Executes a clinical program code block."""
         pass
 
-class MockSASAdapter(ExecutionAdapter):
+class ClinicalDerivationAdapter(ExecutionAdapter):
     def __init__(self, log_dir='outputs/logs', dataset_dir='outputs/datasets'):
         self.log_dir = log_dir
         self.dataset_dir = dataset_dir
@@ -162,8 +162,8 @@ class MockSASAdapter(ExecutionAdapter):
         cohort = self._generate_clinical_cohort()
         
         log_content.append("")
-        log_content.append("NOTE: Copyright (c) 2016 by SAS Institute Inc., Cary, NC, USA.")
-        log_content.append("NOTE: SAS (r) Proprietary Software 9.4 (TS1M7)")
+        log_content.append("NOTE: Python clinical derivation adapter executed deterministic oncology derivations.")
+        log_content.append("NOTE: External SAS execution and vendor log evidence are not simulated as proprietary SAS output.")
         log_content.append(f"NOTE: There were {len(cohort)} observations read from the raw clinical database.")
         log_content.append(f"NOTE: DATA statement used (Total process time):")
         log_content.append("      real time           0.08 seconds")
@@ -172,7 +172,7 @@ class MockSASAdapter(ExecutionAdapter):
         with open(log_filepath, 'w') as f:
             f.write("\n".join(log_content))
             
-        print(f"[MockSASAdapter] Executed {program_name}. SAS Log saved: {log_filepath}")
+        print(f"[ClinicalDerivationAdapter] Executed {program_name}. Execution log saved: {log_filepath}")
         
         # 2. Derive datasets programmatically
         dest_dir = outputs if outputs else self.dataset_dir
@@ -328,8 +328,8 @@ class MockSASAdapter(ExecutionAdapter):
                 json_hasher.update(chunk)
         json_hash = json_hasher.hexdigest()
         
-        print(f"[MockSASAdapter] Emitted dynamic clinical Dataset-JSON: {json_path}")
-        print(f"[MockSASAdapter] Emitted dynamic clinical SAS XPT: {xpt_path}")
+        print(f"[ClinicalDerivationAdapter] Emitted dynamic clinical Dataset-JSON: {json_path}")
+        print(f"[ClinicalDerivationAdapter] Emitted dynamic clinical SAS XPT: {xpt_path}")
         
         return {
             "run_id": run_id,
@@ -343,5 +343,5 @@ class MockSASAdapter(ExecutionAdapter):
         }
 
 if __name__ == '__main__':
-    adapter = MockSASAdapter()
+    adapter = ClinicalDerivationAdapter()
     adapter.execute("generated_programs/derive_rule_pfs_aval.sas", "metadata.db", "outputs/datasets", "RUN_TEST")

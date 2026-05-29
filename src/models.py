@@ -84,6 +84,18 @@ class Variable(Base):
     origin = Column(String(100))
     controlled_terminology = Column(Text)
 
+# 6b. Parameter-level realization metadata
+class ParameterVariableMetadata(Base):
+    __tablename__ = 'parameter_variable_metadata'
+
+    dataset = Column(String(50), primary_key=True)
+    variable = Column(String(50), primary_key=True)
+    paramcd = Column(String(8), primary_key=True)
+    bc_id = Column(String(50), ForeignKey('biomedical_concepts.bc_id'), nullable=False)
+    rule_id = Column(String(50), ForeignKey('derivation_rules.rule_id'), nullable=True)
+    role = Column(String(50))
+    origin = Column(String(100))
+
 # 7. Analysis Result Table (ARM Core)
 class AnalysisResult(Base):
     __tablename__ = 'analysis_results'
@@ -167,8 +179,19 @@ class AIAction(Base):
 def init_database(db_path='metadata.db', config_path='study_config.yaml'):
     """Initializes the SQLite database and seeds default data from study_config.yaml"""
     engine = create_engine(f'sqlite:///{db_path}')
-    Base.metadata.create_all(engine)
     
+    # Apply Alembic migrations as the authoritative schema path.
+    try:
+        from alembic.config import Config
+        from alembic import command
+        alembic_cfg = Config("alembic.ini")
+        alembic_cfg.set_main_option("sqlalchemy.url", f"sqlite:///{db_path}")
+        command.upgrade(alembic_cfg, "head")
+        print(f"[Database] Applied Alembic migrations through revision 'head'.")
+    except Exception as e:
+        print(f"[Database] [Warning] Alembic migration failed; falling back to SQLAlchemy metadata creation: {e}")
+        Base.metadata.create_all(engine)
+        
     Session = sessionmaker(bind=engine)
     session = Session()
     

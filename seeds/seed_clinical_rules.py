@@ -4,7 +4,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
-from models import DerivationRule, Variable
+from models import DerivationRule, ParameterVariableMetadata, Variable
 
 def seed_additional_clinical_rules(db_path='metadata.db'):
     engine = create_engine(f'sqlite:///{db_path}')
@@ -70,6 +70,26 @@ def seed_additional_clinical_rules(db_path='metadata.db'):
             approval_status="approved",
             logic_definition="Time in days from first documented objective response (CR or PR) to progressive disease (PD) or death."
         ),
+        DerivationRule(
+            rule_id="RULE_IPFS_CNSR",
+            endpoint_id="EP_IPFS_ITT",
+            target_variable="CNSR",
+            logic_type="event_flag",
+            assessor="INVESTIGATOR",
+            criteria_type="iRECIST",
+            approval_status="approved",
+            logic_definition="Set to 0 for confirmed iRECIST progression or death; set to 1 if censored at last evaluable tumor assessment without confirmed iPD."
+        ),
+        DerivationRule(
+            rule_id="RULE_DOR_CNSR",
+            endpoint_id="EP_SEC_DOR_9",
+            target_variable="CNSR",
+            logic_type="event_flag",
+            assessor="INVESTIGATOR",
+            criteria_type="RECIST_1.1",
+            approval_status="approved",
+            logic_definition="Set to 0 for progression or death after first response; set to 1 if response duration is censored at last evaluable assessment."
+        ),
         # BICR (Blinded Independent Central Review) Parallel Rules
         DerivationRule(
             rule_id="RULE_PFS_AVAL_BICR",
@@ -107,6 +127,23 @@ def seed_additional_clinical_rules(db_path='metadata.db'):
         session.merge(r)
         
     session.commit()
+
+    param_metadata = [
+        ParameterVariableMetadata(dataset="ADTTE", variable="AVAL", paramcd="PFS", bc_id="PFS", rule_id="RULE_PFS_AVAL", role="Analysis Value (Days)", origin="Derived from RECIST 1.1 PFS endpoint"),
+        ParameterVariableMetadata(dataset="ADTTE", variable="CNSR", paramcd="PFS", bc_id="PFS", rule_id="RULE_PFS_CNSR", role="Censor Flag", origin="Derived from RECIST 1.1 PFS censoring rules"),
+        ParameterVariableMetadata(dataset="ADTTE", variable="AVAL", paramcd="iPFS", bc_id="iPFS", rule_id="RULE_IPFS_AVAL", role="Analysis Value (Days)", origin="Derived from confirmed iRECIST progression/death"),
+        ParameterVariableMetadata(dataset="ADTTE", variable="CNSR", paramcd="iPFS", bc_id="iPFS", rule_id="RULE_IPFS_CNSR", role="Censor Flag", origin="Derived from iRECIST censoring rules"),
+        ParameterVariableMetadata(dataset="ADTTE", variable="AVAL", paramcd="OS", bc_id="OS", rule_id="RULE_OS_AVAL", role="Analysis Value (Days)", origin="Derived from death or censoring date"),
+        ParameterVariableMetadata(dataset="ADTTE", variable="CNSR", paramcd="OS", bc_id="OS", rule_id="RULE_OS_CNSR", role="Censor Flag", origin="Derived from survival status"),
+        ParameterVariableMetadata(dataset="ADDOR", variable="AVAL", paramcd="DOR", bc_id="DOR", rule_id="RULE_DOR_AVAL", role="Analysis Value (Days)", origin="Derived for confirmed responders"),
+        ParameterVariableMetadata(dataset="ADDOR", variable="CNSR", paramcd="DOR", bc_id="DOR", rule_id="RULE_DOR_CNSR", role="Censor Flag", origin="Derived from response duration censoring"),
+        ParameterVariableMetadata(dataset="ADRS", variable="ORR_FL", paramcd="BOR", bc_id="BOR", rule_id="RULE_ORR_FL", role="Objective Response Flag", origin="Derived from best overall response"),
+    ]
+
+    for item in param_metadata:
+        session.merge(item)
+
+    session.commit()
     
     # 3. Explicitly link objectives to endpoints (GAP-02)
     objective_mappings = {
@@ -125,7 +162,7 @@ def seed_additional_clinical_rules(db_path='metadata.db'):
         )
     session.commit()
     session.close()
-    print(f"[seed_clinical_rules] Successfully registered 5 clinical variables, 7 SAP oncology rules, and updated objectives mapping.")
+    print(f"[seed_clinical_rules] Successfully registered clinical variables, SAP oncology rules, parameter-level lineage metadata, and objective mappings.")
 
 if __name__ == '__main__':
     seed_additional_clinical_rules()

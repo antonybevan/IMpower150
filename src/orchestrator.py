@@ -5,7 +5,7 @@ _ROOT = os.path.join(os.path.dirname(__file__), '..')
 sys.path.insert(0, os.path.join(_ROOT, 'seeds'))
 
 from rule_parser import RuleParser
-from execution_adapter import MockSASAdapter
+from execution_adapter import ClinicalDerivationAdapter
 from snapshot_manager import SnapshotManager
 from graph_builder import SemanticGraphBuilder
 from qc_engine import QCEngine
@@ -23,7 +23,7 @@ class PipelineOrchestrator:
         self.output_dir = output_dir
         
         self.parser = RuleParser(db_path=self.db_path, output_dir=os.path.join(self.output_dir, "sas_programs"))
-        self.adapter = MockSASAdapter(
+        self.adapter = ClinicalDerivationAdapter(
             log_dir=os.path.join(self.output_dir, "logs"),
             dataset_dir=os.path.join(self.output_dir, "datasets")
         )
