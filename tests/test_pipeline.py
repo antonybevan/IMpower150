@@ -41,7 +41,7 @@ def run_e2e_verification_pipeline():
     from orchestrator import PipelineOrchestrator
     orchestrator = PipelineOrchestrator(db_path=db_path, duck_path=duck_path, output_dir=output_dir)
     
-    # Run the full end-to-end pipeline (Database, Rules, Snapshots, Mock SAS runtime, QC, Graph, Exporters)
+    # Run the full end-to-end pipeline (Database, Rules, Snapshots, Clinical SAS execution adapter, QC, Graph, Exporters)
     run_id = "RUN_IMPOWER150_2026_05"
     exec_result = orchestrator.run_pipeline(run_id=run_id)
     

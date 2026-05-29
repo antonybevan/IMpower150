@@ -58,7 +58,7 @@ class SnapshotManager:
         env_manifest = {
             "python_version": sys.version.split()[0],
             "os": os.name,
-            "sas_version": "9.4 M7 (Mock)",
+            "sas_version": "9.4 M7 (ClinicalDerivationAdapter)",
             "execution_ts": datetime.datetime.now().isoformat(),
             "metadata_db_hash": db_hash,
             "rule_hash_manifest": rule_manifest_list,
@@ -85,7 +85,7 @@ class SnapshotManager:
             sdtmig_version="3.4",
             adamig_version="1.3",
             python_version=sys.version.split()[0],
-            sas_version="9.4 (Mock)",
+            sas_version="9.4 M7 (ClinicalDerivationAdapter)",
             rule_hash_manifest=rule_manifest_json,
             metadata_db_hash=db_hash,
             environment_hash=env_hash
