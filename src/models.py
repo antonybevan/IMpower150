@@ -268,7 +268,7 @@ def init_database(db_path='metadata.db', config_path='study_config.yaml'):
     if session.query(BiomedicalConcept).count() == 0:
         session.bulk_save_objects(bc_seeds)
         session.commit()
-        print("[Database] Seeded 5 COSMoS Biomedical Concepts.")
+        print("[Database] Seeded 7 COSMoS Biomedical Concepts.")
         
     # Read study_config.yaml for M11 Protocol Seeds
     if os.path.exists(config_path):

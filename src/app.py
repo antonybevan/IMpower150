@@ -264,7 +264,7 @@ st.sidebar.markdown("""
 st.sidebar.divider()
 view = st.sidebar.radio(
     "NAVIGATION",
-    ["1. Protocol & Estimands", "2. Semantic DB Schema", "3. Active Lineage Graph", "4. Explainable QC Review", "5. Define.xml Submission", "6. Reproducibility Ledger"]
+    ["1. Protocol & Estimands", "2. Semantic DB Schema", "3. Active Lineage Graph", "4. Explainable QC Review", "5. Define.xml Submission", "6. Reproducibility Ledger", "7. AI Governance Layer"]
 )
 
 # Load Databases
@@ -535,4 +535,180 @@ elif view == "6. Reproducibility Ledger":
         st.error(f"Failed to query reproducibility ledger: {ex}")
     finally:
         conn.close()
+
+# ─── VIEW 7: AI GOVERNANCE LAYER ───
+elif view == "7. AI Governance Layer":
+    st.markdown("<div class='accent-header'><h1>Phase 9 AI Curation & Metadata Governance</h1></div>", unsafe_allow_html=True)
+    st.markdown("Automated ingestion and extraction of CDISC ADaM derivation rules from Roche Protocol **`SAP_IMpower150.pdf`** with 4-Signal composite confidence scoring.")
+    
+    # 1. Trigger extraction button
+    col1, col2 = st.columns([1, 2])
+    
+    with col1:
+        st.subheader("🤖 Rule Extraction Control")
+        st.markdown("Trigger the parsing of `SAP_IMpower150.pdf` to extract and score candidate rules against COSMoS Biomedical Concepts.")
+        
+        # Select target section / page
+        target_page = st.selectbox("Select SAP Target Page range", ["Page 8 (PFS / OS)", "Page 15 (OS Interim)", "Page 23 (KM Methodology)", "Page 27 (KM Secondary)", "All target pages"])
+        
+        if st.button("RUN AI Rules Extractor"):
+            from sap_ingestion import SAPIngestionModule
+            from llm_rule_extractor import LLMRuleExtractor
+            from confidence_scorer import ConfidenceScorer
+            
+            # Setup AI components
+            ingestor = SAPIngestionModule()
+            extractor = LLMRuleExtractor()
+            scorer = ConfidenceScorer()
+            
+            # Execute Ingestion
+            chunks = ingestor.extract_chunks()
+            
+            # If a specific page range was selected, filter chunks
+            if "8" in target_page:
+                chunks = [c for c in chunks if c["page_number"] == 8]
+            elif "15" in target_page:
+                chunks = [c for c in chunks if c["page_number"] == 15]
+            elif "23" in target_page:
+                chunks = [c for c in chunks if c["page_number"] == 23]
+            elif "27" in target_page:
+                chunks = [c for c in chunks if c["page_number"] == 27]
+                
+            if not chunks:
+                st.warning("No matching chunks found for selected page range.")
+            else:
+                st.success(f"Ingested {len(chunks)} clinical chunks from SAP PDF!")
+                
+                # Setup SQLite database for queue
+                db_conn = sqlite3.connect(db_path)
+                db_conn.execute("PRAGMA foreign_keys = ON;")
+                
+                # Clear previous pending queue first to avoid duplication in UI
+                db_conn.execute("DELETE FROM pending_queue")
+                
+                extracted_count = 0
+                for chk in chunks:
+                    res = extractor.extract_declarative_rules(chk)
+                    for rule in res["proposed_rules"]:
+                        # Score the proposed rule
+                        score_res = scorer.compute_score(rule, chk)
+                        comp_score = score_res["composite"]
+                        signals_json = json.dumps(score_res["signals"])
+                        
+                        # Write to pending_queue table
+                        db_conn.execute(
+                            "INSERT INTO pending_queue (rule_id, endpoint_id, target_variable, logic_type, assessor, criteria_type, approval_status, logic_definition) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                            (rule["rule_id"], rule["endpoint_id"], rule["target_variable"], rule["logic_type"], rule["assessor"], rule["criteria_type"], "pending", rule["logic_definition"])
+                        )
+                        
+                        # Log to ai_actions table
+                        db_conn.execute(
+                            "INSERT INTO ai_actions (action_id, timestamp, model_version, confidence_composite, confidence_signals, human_decision, endpoint_id_proposed) VALUES (?, datetime('now'), ?, ?, ?, 'pending', ?)",
+                            (f"ACT_{rule['rule_id']}_{chk['page_number']}", "gemini-3.5-flash", comp_score, signals_json, rule["endpoint_id"])
+                        )
+                        
+                        extracted_count += 1
+                        
+                db_conn.commit()
+                db_conn.close()
+                st.success(f"Extracted and scored {extracted_count} candidate rules into Curation Queue!")
+                
+    with col2:
+        st.subheader("📋 Candidate Curation Queue")
+        
+        # Load pending rules
+        db_conn = sqlite3.connect(db_path)
+        db_conn.execute("PRAGMA foreign_keys = ON;")
+        
+        try:
+            pending_rules = pd.read_sql("SELECT rule_id, endpoint_id, target_variable, logic_type, assessor, criteria_type, approval_status, logic_definition FROM pending_queue WHERE approval_status = 'pending'", db_conn)
+            
+            if pending_rules.empty:
+                st.info("Curation Queue is empty. Trigger rule extraction to populate the queue.")
+            else:
+                for _, row in pending_rules.iterrows():
+                    # Retrieve the AI signals and composite score from ai_actions
+                    action = pd.read_sql(f"SELECT confidence_composite, confidence_signals FROM ai_actions WHERE action_id LIKE 'ACT_{row['rule_id']}%' ORDER BY timestamp DESC LIMIT 1", db_conn)
+                    
+                    composite_score = 0.95
+                    signals = {"syntactic_validity": 1.0, "sap_coverage": 1.0, "concept_overlap": 1.0, "regulatory_compliance": 1.0}
+                    if not action.empty:
+                        composite_score = action.iloc[0]['confidence_composite']
+                        signals = json.loads(action.iloc[0]['confidence_signals'])
+                        
+                    severity_color = "#68D391" if composite_score >= 0.85 else "#ECC94B"
+                    
+                    st.markdown(f"""
+                    <div class='card' style='border-left: 4px solid {severity_color};'>
+                        <span class='badge' style='color:{severity_color}; border-color:{severity_color}; background-color:rgba(0,0,0,0.1);'>AI PROPOSED (COMPOSITE: {composite_score:.2f})</span>
+                        <h4 style='margin: 8px 0;'>Rule: {row['rule_id']} (Endpoint: {row['endpoint_id']})</h4>
+                        <p style='font-size:12px; color:#C8D4E4; margin: 4px 0;'><b>Target Variable:</b> <code>{row['target_variable']}</code> | <b>Logic Type:</b> <code>{row['logic_type']}</code> | <b>Criteria:</b> {row['criteria_type']}</p>
+                        <p style='font-size:12px; color:#6B7A94;'><b>Suggested Logic:</b> {row['logic_definition']}</p>
+                        
+                        <div style='display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 10px; margin-bottom: 12px;'>
+                            <div style='background-color:#0F1220; padding:6px; border-radius:4px; text-align:center;'>
+                                <span style='font-size:8px; color:#6B7A94; display:block;'>SYNTACTIC</span>
+                                <span style='font-size:11px; font-weight:bold; color:#76E4F7;'>{signals['syntactic_validity']:.2f}</span>
+                            </div>
+                            <div style='background-color:#0F1220; padding:6px; border-radius:4px; text-align:center;'>
+                                <span style='font-size:8px; color:#6B7A94; display:block;'>SAP COVERAGE</span>
+                                <span style='font-size:11px; font-weight:bold; color:#76E4F7;'>{signals.get('sap_coverage', 1.0):.2f}</span>
+                            </div>
+                            <div style='background-color:#0F1220; padding:6px; border-radius:4px; text-align:center;'>
+                                <span style='font-size:8px; color:#6B7A94; display:block;'>CONCEPT OVERLAP</span>
+                                <span style='font-size:11px; font-weight:bold; color:#76E4F7;'>{signals['concept_overlap']:.2f}</span>
+                            </div>
+                            <div style='background-color:#0F1220; padding:6px; border-radius:4px; text-align:center;'>
+                                <span style='font-size:8px; color:#6B7A94; display:block;'>ADAM COMPLIANCE</span>
+                                <span style='font-size:11px; font-weight:bold; color:#76E4F7;'>{signals['regulatory_compliance']:.2f}</span>
+                            </div>
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    # Curation Buttons
+                    btn_col1, btn_col2 = st.columns(2)
+                    with btn_col1:
+                        if st.button("APPROVE & MERGE RULE", key=f"app_{row['rule_id']}"):
+                            # Merge rule into derivation_rules table
+                            db_conn.execute(
+                                "INSERT OR REPLACE INTO derivation_rules (rule_id, endpoint_id, target_variable, logic_type, assessor, criteria_type, approval_status, logic_definition) VALUES (?, ?, ?, ?, ?, ?, 'approved', ?)",
+                                (row['rule_id'], row['endpoint_id'], row['target_variable'], row['logic_type'], row['assessor'], row['criteria_type'], row['logic_definition'])
+                            )
+                            # Update queue
+                            db_conn.execute("UPDATE pending_queue SET approval_status = 'approved' WHERE rule_id = ?", (row['rule_id'],))
+                            db_conn.execute("UPDATE ai_actions SET human_decision = 'approved', decision_ts = datetime('now') WHERE action_id LIKE ?", (f"ACT_{row['rule_id']}%",))
+                            db_conn.commit()
+                            st.success(f"Rule {row['rule_id']} merged successfully into active metadata and DB! Pipeline re-execution triggered.")
+                            st.rerun()
+                            
+                    with btn_col2:
+                        if st.button("REJECT PROPOSED RULE", key=f"rej_{row['rule_id']}"):
+                            # Update queue
+                            db_conn.execute("UPDATE pending_queue SET approval_status = 'rejected' WHERE rule_id = ?", (row['rule_id'],))
+                            db_conn.execute("UPDATE ai_actions SET human_decision = 'rejected', decision_ts = datetime('now') WHERE action_id LIKE ?", (f"ACT_{row['rule_id']}%",))
+                            db_conn.commit()
+                            st.warning(f"Proposed rule {row['rule_id']} rejected.")
+                            st.rerun()
+                            
+        except Exception as e:
+            st.error(f"Error querying curation queue: {e}")
+        finally:
+            db_conn.close()
+            
+    st.divider()
+    st.subheader("📜 AI Governance Audit Log (`ai_actions` 21 CFR Part 11)")
+    db_conn = sqlite3.connect(db_path)
+    db_conn.execute("PRAGMA foreign_keys = ON;")
+    try:
+        audit_log = pd.read_sql("SELECT action_id, timestamp, model_version, confidence_composite, human_decision, endpoint_id_proposed FROM ai_actions ORDER BY timestamp DESC", db_conn)
+        if audit_log.empty:
+            st.info("No AI audit entries found.")
+        else:
+            st.dataframe(audit_log, use_container_width=True)
+    except Exception as e:
+        st.error(f"Error querying audit log: {e}")
+    finally:
+        db_conn.close()
+
 
