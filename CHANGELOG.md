@@ -7,6 +7,21 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [4.0.0] — 2026-05-30
+
+### Added
+- **Phase 9 High-Fidelity AI Governance Layer**:
+  - Upgraded Ingestion Engine (`src/sap_ingestion.py`) to parse the actual 10MB `references/SAP_IMpower150.pdf` using `pypdf` with space-insensitive cleaning normalization.
+  - Upgraded Semantic Rules Extractor (`src/llm_rule_extractor.py`) and Confidence Scorer (`src/confidence_scorer.py`) with 4-signal composite scoring.
+  - Added dedicated **AI Governance & Curation** tab in Streamlit dashboard (`src/app.py`) with a curation pending queue, gauge visualizations, and Approve/Reject controls.
+  - Implemented W3C RDF Turtle lineage ontology serialization (`outputs/submission/lineage_ontology.ttl`) in `src/graph_builder.py`.
+- **Efficacy Censoring Sensitivity Analysis Engine**:
+  - Implemented parallel time-to-event parameters: `PFS` (FDA rules with censor-on-new-therapy) and `PFS_EMA` (EMA rules treating new therapy as progression event) in `src/execution_adapter.py`.
+  - Added deterministic new anti-cancer therapy (`NT_DT`) and last assessment (`LAST_ASSESS_DT`) generation to clinical cohort engine.
+  - Integrated `PFS_EMA` into database schema, seeds (`seeds/seed_clinical_rules.py`, `seeds/seed_arm_results.py`, `src/models.py`), Define-XML CodeList generator (`src/define_xml_generator.py`), and Level 2 oncology QC engine (`src/qc_engine.py`).
+
+---
+
 ## [3.0.0] — 2026-05-29
 
 ### Added

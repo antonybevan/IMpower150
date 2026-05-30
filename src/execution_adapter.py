@@ -105,6 +105,19 @@ class ClinicalDerivationAdapter(ExecutionAdapter):
                 else:
                     ipfs_dt = dth_dt
             
+            # New anti-cancer therapy generation for sensitivity analysis
+            has_nt = rng.random() < 0.15
+            nt_dt = None
+            last_assess_dt = None
+            if has_nt:
+                nt_days = rng.randint(45, 180)
+                nt_dt = rand_dt + timedelta(days=nt_days)
+                last_assess_days = 42 * ((nt_days - 1) // 42)
+                if last_assess_days <= 0:
+                    last_assess_dt = rand_dt
+                else:
+                    last_assess_dt = rand_dt + timedelta(days=last_assess_days)
+
             # Subject 4 is the crucial RECIST validation anomaly
             if i == 4:
                 pd_dt = rand_dt + timedelta(days=84)
@@ -116,6 +129,8 @@ class ClinicalDerivationAdapter(ExecutionAdapter):
                 iupd_fl = "Y"
                 conf_dt = pd_dt + timedelta(days=30)
                 ipfs_dt = conf_dt
+                nt_dt = None
+                last_assess_dt = None
                 
             cohort.append({
                 "USUBJID": usubjid,
@@ -130,7 +145,9 @@ class ClinicalDerivationAdapter(ExecutionAdapter):
                 "LSTALVDT_BICR": lstalv_dt_bicr,
                 "IUPD_FL": iupd_fl,
                 "CONF_DT": conf_dt,
-                "IPFSDT": ipfs_dt
+                "IPFSDT": ipfs_dt,
+                "NT_DT": nt_dt,
+                "LAST_ASSESS_DT": last_assess_dt
             })
             
         return cohort
@@ -189,24 +206,67 @@ class ClinicalDerivationAdapter(ExecutionAdapter):
                 {"name": "CNSR", "label": "Censor Flag", "dataType": "integer"}
             ]
             
-            # Derive PFS, iPFS, and OS for all subjects
+            # Derive PFS, PFS_EMA, iPFS, and OS for all subjects
             item_data = []
             for idx, pat in enumerate(cohort, start=1):
-                # A. PFS (Investigator)
                 pfs_event = pat["PDDT"] is not None or pat["DTHDT"] is not None
-                if pfs_event:
-                    event_dt = min(d for d in (pat["PDDT"], pat["DTHDT"]) if d is not None)
-                    pfs_aval = (event_dt - pat["RANDDT"]).days + 1
-                    pfs_cnsr = 0
+                
+                # A. PFS (Investigator, FDA Rules: censor if new therapy started before progression/death)
+                if pat["NT_DT"] is not None:
+                    if pfs_event:
+                        event_dt = min(d for d in (pat["PDDT"], pat["DTHDT"]) if d is not None)
+                        if pat["NT_DT"] < event_dt:
+                            cnsr_dt = pat["LAST_ASSESS_DT"] if pat["LAST_ASSESS_DT"] is not None else pat["RANDDT"]
+                            pfs_aval = (cnsr_dt - pat["RANDDT"]).days + 1
+                            pfs_cnsr = 1
+                        else:
+                            pfs_aval = (event_dt - pat["RANDDT"]).days + 1
+                            pfs_cnsr = 0
+                    else:
+                        cnsr_dt = pat["LAST_ASSESS_DT"] if pat["LAST_ASSESS_DT"] is not None else pat["RANDDT"]
+                        pfs_aval = (cnsr_dt - pat["RANDDT"]).days + 1
+                        pfs_cnsr = 1
                 else:
-                    pfs_aval = (pat["LSTALVDT"] - pat["RANDDT"]).days + 1
-                    pfs_cnsr = 1
+                    if pfs_event:
+                        event_dt = min(d for d in (pat["PDDT"], pat["DTHDT"]) if d is not None)
+                        pfs_aval = (event_dt - pat["RANDDT"]).days + 1
+                        pfs_cnsr = 0
+                    else:
+                        pfs_aval = (pat["LSTALVDT"] - pat["RANDDT"]).days + 1
+                        pfs_cnsr = 1
                 
                 # Apply the target RECIST progression anomaly for subject 4
                 if pat["USUBJID"] == "GO29436-001-004":
                     pfs_cnsr = 1  # Forced anomaly
                 
                 item_data.append(["GO29436", pat["USUBJID"], "PFS", pfs_aval, pfs_cnsr])
+                
+                # A_EMA. PFS_EMA (Investigator, EMA Rules: treat starting new therapy as event)
+                if pat["NT_DT"] is not None:
+                    if pfs_event:
+                        event_dt = min(d for d in (pat["PDDT"], pat["DTHDT"]) if d is not None)
+                        if pat["NT_DT"] < event_dt:
+                            pfs_ema_aval = (pat["NT_DT"] - pat["RANDDT"]).days + 1
+                            pfs_ema_cnsr = 0
+                        else:
+                            pfs_ema_aval = (event_dt - pat["RANDDT"]).days + 1
+                            pfs_ema_cnsr = 0
+                    else:
+                        pfs_ema_aval = (pat["NT_DT"] - pat["RANDDT"]).days + 1
+                        pfs_ema_cnsr = 0
+                else:
+                    if pfs_event:
+                        event_dt = min(d for d in (pat["PDDT"], pat["DTHDT"]) if d is not None)
+                        pfs_ema_aval = (event_dt - pat["RANDDT"]).days + 1
+                        pfs_ema_cnsr = 0
+                    else:
+                        pfs_ema_aval = (pat["LSTALVDT"] - pat["RANDDT"]).days + 1
+                        pfs_ema_cnsr = 1
+                        
+                if pat["USUBJID"] == "GO29436-001-004":
+                    pfs_ema_cnsr = 1  # Forced anomaly
+                    
+                item_data.append(["GO29436", pat["USUBJID"], "PFS_EMA", pfs_ema_aval, pfs_ema_cnsr])
                 
                 # B. iPFS (Investigator)
                 ipfs_event = pat["IPFSDT"] is not None or pat["DTHDT"] is not None

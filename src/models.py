@@ -390,7 +390,7 @@ def init_database(db_path='metadata.db', config_path='study_config.yaml'):
             Variable(variable="CNSR", dataset="ADSL", role="Censor Flag", datatype="integer", bc_id="OS", origin="Derived from survival status", controlled_terminology="0 = Event, 1 = Censored"),
             Variable(variable="AVAL", dataset="ADTTE", role="Analysis Value (Days)", datatype="float", bc_id="PFS", origin="Derived", controlled_terminology=None),
             Variable(variable="CNSR", dataset="ADTTE", role="Censor Flag", datatype="integer", bc_id="PFS", origin="Derived based on SAP criteria", controlled_terminology="0 = Event, 1 = Censored"),
-            Variable(variable="PARAMCD", dataset="ADTTE", role="Parameter Code", datatype="string", bc_id="PARAMCD", origin="Predefined", controlled_terminology="PFS, OS, iPFS"),
+            Variable(variable="PARAMCD", dataset="ADTTE", role="Parameter Code", datatype="string", bc_id="PARAMCD", origin="Predefined", controlled_terminology="PFS, OS, iPFS, PFS_EMA"),
             Variable(variable="RSORRES", dataset="RS", role="Response Result", datatype="string", bc_id="BOR", origin="Investigator Assessment", controlled_terminology="CR, PR, SD, PD, NE")
         ]
         for v in var_seeds:

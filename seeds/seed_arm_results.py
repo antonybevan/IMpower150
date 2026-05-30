@@ -50,13 +50,20 @@ def seed_arm_data(db_path='metadata.db'):
             variable="PARAMCD",
             filter_operator="EQ",
             filter_value="DOR"
+        ),
+        WhereClause(
+            where_clause_id="WC_PARAMCD_PFS_EMA",
+            dataset="ADTTE",
+            variable="PARAMCD",
+            filter_operator="EQ",
+            filter_value="PFS_EMA"
         )
     ]
 
     for wc in where_clauses:
         session.merge(wc)
     session.commit()
-    print("[seed_arm_results] Seeded 5 Where Clauses.")
+    print(f"[seed_arm_results] Seeded {len(where_clauses)} Where Clauses.")
 
     # 2. Seed Analysis Results (ARM Core)
     analysis_results = [
@@ -72,6 +79,19 @@ def seed_arm_data(db_path='metadata.db'):
             tfl_reference="Table 14.2.1.1",
             estimand_id="EST_PFS_WT",
             arm_display_label="Arm B vs Arm C (WT Population)"
+        ),
+        # Sensitivity Analysis PFS (EMA rules) (WT population)
+        AnalysisResult(
+            analysis_id="ANA_PFS_EMA_WT_01",
+            endpoint_id="EP_PFS_WT",
+            dataset="ADTTE",
+            paramcd="PFS_EMA",
+            where_clause_id="WC_PARAMCD_PFS_EMA",
+            stat_method="Stratified Cox Proportional Hazards Model",
+            stat_test="Stratified Log-Rank Test",
+            tfl_reference="Table 14.2.1.1.1",
+            estimand_id="EST_PFS_WT",
+            arm_display_label="Arm B vs Arm C (WT Population, EMA Rules)"
         ),
         # Primary OS (WT population)
         AnalysisResult(

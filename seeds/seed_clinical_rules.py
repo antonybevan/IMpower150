@@ -120,6 +120,27 @@ def seed_additional_clinical_rules(db_path='metadata.db'):
             criteria_type="RECIST_1.1",
             approval_status="approved",
             logic_definition="BICR-assessed survival time in days, calculated as Death Date (DTHDT) - Randomization Date (RANDDT) + 1."
+        ),
+        # PFS Sensitivity Analysis Rules under EMA Censoring guidelines
+        DerivationRule(
+            rule_id="RULE_PFS_EMA_AVAL",
+            endpoint_id="EP_PFS_WT",
+            target_variable="AVAL",
+            logic_type="date_diff",
+            assessor="INVESTIGATOR",
+            criteria_type="RECIST_1.1",
+            approval_status="approved",
+            logic_definition="Time in days from randomization to Investigator-assessed progression, death, or initiation of new anti-cancer therapy, whichever is earliest."
+        ),
+        DerivationRule(
+            rule_id="RULE_PFS_EMA_CNSR",
+            endpoint_id="EP_PFS_WT",
+            target_variable="CNSR",
+            logic_type="event_flag",
+            assessor="INVESTIGATOR",
+            criteria_type="RECIST_1.1",
+            approval_status="approved",
+            logic_definition="Set to 0 if patient progressed, died, or initiated a new anti-cancer therapy; set to 1 if censored."
         )
     ]
     
@@ -131,6 +152,8 @@ def seed_additional_clinical_rules(db_path='metadata.db'):
     param_metadata = [
         ParameterVariableMetadata(dataset="ADTTE", variable="AVAL", paramcd="PFS", bc_id="PFS", rule_id="RULE_PFS_AVAL", role="Analysis Value (Days)", origin="Derived from RECIST 1.1 PFS endpoint"),
         ParameterVariableMetadata(dataset="ADTTE", variable="CNSR", paramcd="PFS", bc_id="PFS", rule_id="RULE_PFS_CNSR", role="Censor Flag", origin="Derived from RECIST 1.1 PFS censoring rules"),
+        ParameterVariableMetadata(dataset="ADTTE", variable="AVAL", paramcd="PFS_EMA", bc_id="PFS", rule_id="RULE_PFS_EMA_AVAL", role="Analysis Value (Days)", origin="Derived based on RECIST 1.1 and EMA censoring criteria"),
+        ParameterVariableMetadata(dataset="ADTTE", variable="CNSR", paramcd="PFS_EMA", bc_id="PFS", rule_id="RULE_PFS_EMA_CNSR", role="Censor Flag", origin="Derived based on RECIST 1.1 and EMA censoring criteria"),
         ParameterVariableMetadata(dataset="ADTTE", variable="AVAL", paramcd="iPFS", bc_id="iPFS", rule_id="RULE_IPFS_AVAL", role="Analysis Value (Days)", origin="Derived from confirmed iRECIST progression/death"),
         ParameterVariableMetadata(dataset="ADTTE", variable="CNSR", paramcd="iPFS", bc_id="iPFS", rule_id="RULE_IPFS_CNSR", role="Censor Flag", origin="Derived from iRECIST censoring rules"),
         ParameterVariableMetadata(dataset="ADTTE", variable="AVAL", paramcd="OS", bc_id="OS", rule_id="RULE_OS_AVAL", role="Analysis Value (Days)", origin="Derived from death or censoring date"),

@@ -87,12 +87,13 @@ def run_e2e_verification_pipeline():
     seen_params = set()
     for record in adtte_records:
         paramcd = record[2]
-        assert paramcd in ("PFS", "iPFS", "OS"), f"Contradiction in ADTTE: PARAMCD is {paramcd} (Expected PFS, iPFS, or OS)"
+        assert paramcd in ("PFS", "iPFS", "OS", "PFS_EMA"), f"Contradiction in ADTTE: PARAMCD is {paramcd} (Expected PFS, iPFS, OS, or PFS_EMA)"
         seen_params.add(paramcd)
         
     assert "PFS" in seen_params, "PFS parameter missing from ADTTE"
     assert "iPFS" in seen_params, "iPFS parameter missing from ADTTE"
     assert "OS" in seen_params, "OS parameter missing from ADTTE"
+    assert "PFS_EMA" in seen_params, "PFS_EMA parameter missing from ADTTE"
     for ds_name in ("adtte", "addor", "adrs"):
         xpt_path = os.path.join(output_dir, "datasets", f"{ds_name}.xpt")
         assert os.path.exists(xpt_path), f"{ds_name}.xpt missing"

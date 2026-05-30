@@ -157,7 +157,7 @@ class SubmissionGenerator:
             "Name": "Parameter Code List",
             "DataType": "text"
         })
-        for val, desc in [("PFS", "Progression-Free Survival"), ("OS", "Overall Survival"), ("iPFS", "immune Progression-Free Survival"), ("DOR", "Duration of Response"), ("BOR", "Best Overall Response")]:
+        for val, desc in [("PFS", "Progression-Free Survival"), ("OS", "Overall Survival"), ("iPFS", "immune Progression-Free Survival"), ("DOR", "Duration of Response"), ("BOR", "Best Overall Response"), ("PFS_EMA", "Progression-Free Survival (EMA Censoring)")]:
             cli = ET.SubElement(paramcd_cl, f"{{{ODM_NS}}}CodeListItem", {"CodedValue": val})
             dec = ET.SubElement(cli, f"{{{ODM_NS}}}Decode")
             ET.SubElement(dec, f"{{{ODM_NS}}}TranslatedText", {"xml:lang": "en"}).text = desc
@@ -330,7 +330,7 @@ class SubmissionGenerator:
                 elif oid == 'CL.CNSR':
                     cnsr_items = [item.get('CodedValue') for item in elem.findall(f"{{{ODM_NS}}}CodeListItem")]
                     
-        expected_paramcds = {"PFS", "OS", "iPFS", "DOR", "BOR"}
+        expected_paramcds = {"PFS", "OS", "iPFS", "DOR", "BOR", "PFS_EMA"}
         for pc in expected_paramcds:
             if pc not in paramcd_items:
                 errors.append(f"Missing expected PARAMCD in CodeList: {pc}")

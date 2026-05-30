@@ -146,12 +146,14 @@ class QCEngine:
                 cnsr = row[cnsr_idx] if cnsr_idx != -1 else None
                 
                 # Check for documented progression anomaly algorithmically using simulated patient records
-                if paramcd in ("PFS", "iPFS") and usubjid in cohort_map:
+                if paramcd in ("PFS", "iPFS", "PFS_EMA") and usubjid in cohort_map:
                     pat = cohort_map[usubjid]
                     
                     # Determine if an event actually occurred in the raw clinical records
                     if paramcd == "PFS":
                         has_raw_event = pat["PDDT"] is not None or pat["DTHDT"] is not None
+                    elif paramcd == "PFS_EMA":
+                        has_raw_event = pat["PDDT"] is not None or pat["DTHDT"] is not None or pat["NT_DT"] is not None
                     else:  # iPFS
                         has_raw_event = pat["IPFSDT"] is not None or pat["DTHDT"] is not None
                         
