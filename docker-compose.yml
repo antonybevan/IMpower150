@@ -1,0 +1,11 @@
+version: '3.8'
+
+services:
+  computable-pipeline:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      - ./outputs:/app/outputs
+    environment:
+      - RUN_ID=RUN_IMPOWER150_DOCKER

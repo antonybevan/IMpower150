@@ -39,8 +39,11 @@ class SemanticGraphBuilder:
                 label=bc.bc_name, 
                 category=bc.bc_category, 
                 cosmos_id=bc.cosmos_bc_id,
+                parent_bc_id=bc.parent_bc_id,
                 color="#B794F4"
             )
+            if bc.parent_bc_id:
+                self.graph.add_edge(f"CON_{bc.bc_id}", f"CON_{bc.parent_bc_id}", rel="subClassOf")
             
         # ─── LAYER 3: ENDPOINTS ───
         endpoints = session.query(EndpointDefinition).all()
@@ -161,7 +164,7 @@ class SemanticGraphBuilder:
                                 self.graph.add_edge(sas_art_id, var_node_id, rel="outputs")
 
         # Dynamically link datasets to generated output files
-        datasets = ["ados", "adtte", "addor", "adrs"]
+        datasets = ["ados", "adsl", "adtte", "addor", "adrs", "adpanel", "adice"]
         for ds in datasets:
             json_art_id = f"ART_{ds.upper()}_JSON"
             if not self.graph.has_node(json_art_id):
@@ -305,8 +308,11 @@ class SemanticGraphBuilder:
             ttl_lines.append(f"    rdfs:label \"{label}\" ;")
             
             # Add specific attributes as comments/literal values
-            if ntype == "CONCEPT" and data.get("cosmos_id"):
-                ttl_lines.append(f"    cosmos:id \"{data['cosmos_id']}\" ;")
+            if ntype == "CONCEPT":
+                if data.get("cosmos_id"):
+                    ttl_lines.append(f"    cosmos:id \"{data['cosmos_id']}\" ;")
+                if data.get("parent_bc_id"):
+                    ttl_lines.append(f"    rdfs:subClassOf study:CON_{data['parent_bc_id']} ;")
             elif ntype == "OBJECTIVE" and data.get("section"):
                 ttl_lines.append(f"    m11:section \"{data['section']}\" ;")
             
@@ -329,10 +335,48 @@ class SemanticGraphBuilder:
                 "supports": "study:supports",
                 "generates": "study:generates",
                 "outputs": "study:outputs",
-                "produces_artifact": "study:producesArtifact"
+                "produces_artifact": "study:producesArtifact",
+                "subClassOf": "rdfs:subClassOf"
             }
             predicate = pred_map.get(rel, "rdfs:seeAlso")
             ttl_lines.append(f"study:{u} {predicate} study:{v} .")
+            
+        # 3. Append SHACL constraints (M15)
+        shacl_lines = [
+            "",
+            "# --- SHACL Shapes for Clinical Lineage Constraints (M15) ---",
+            "@prefix sh: <http://www.w3.org/ns/shacl#> .",
+            "",
+            "study:EndpointDefinitionShape",
+            "    a sh:NodeShape ;",
+            "    sh:targetClass study:EndpointDefinition ;",
+            "    sh:property [",
+            "        sh:path study:measures ;",
+            "        sh:minCount 1 ;",
+            "        sh:maxCount 1 ;",
+            "        sh:class cosmos:BiomedicalConcept ;",
+            "    ] ;",
+            "    sh:property [",
+            "        sh:path study:quantifies ;",
+            "        sh:minCount 1 ;",
+            "        sh:class ich:Estimand ;",
+            "    ] .",
+            "",
+            "study:DerivationRuleShape",
+            "    a sh:NodeShape ;",
+            "    sh:targetClass study:DerivationRule ;",
+            "    sh:property [",
+            "        sh:path study:implementedBy ;",
+            "        sh:minCount 1 ;",
+            "        sh:class study:EndpointDefinition ;",
+            "    ] ;",
+            "    sh:property [",
+            "        sh:path study:derives ;",
+            "        sh:minCount 1 ;",
+            "        sh:class cdisc:Variable ;",
+            "    ] ."
+        ]
+        ttl_lines.extend(shacl_lines)
             
         with open(output_path, 'w', encoding='utf-8') as f:
             f.write("\n".join(ttl_lines))

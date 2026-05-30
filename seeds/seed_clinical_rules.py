@@ -19,7 +19,16 @@ def seed_additional_clinical_rules(db_path='metadata.db'):
         Variable(variable="PARAMCD", dataset="ADRS", role="Parameter Code", datatype="string", bc_id="PARAMCD", origin="Assigned parameter code", controlled_terminology=None),
         Variable(variable="AVAL", dataset="ADDOR", role="Analysis Value (DOR)", datatype="float", bc_id="DOR", origin="Derived based on response timeline", controlled_terminology=None),
         Variable(variable="CNSR", dataset="ADDOR", role="Censor Flag (DOR)", datatype="integer", bc_id="DOR", origin="Derived based on progression post-response", controlled_terminology="0 = Event, 1 = Censored"),
-        Variable(variable="PARAMCD", dataset="ADDOR", role="Parameter Code", datatype="string", bc_id="PARAMCD", origin="Assigned parameter code", controlled_terminology=None)
+        Variable(variable="PARAMCD", dataset="ADDOR", role="Parameter Code", datatype="string", bc_id="PARAMCD", origin="Assigned parameter code", controlled_terminology=None),
+        # ADPANEL Longitudinal Panel variables
+        Variable(variable="STUDYID", dataset="ADPANEL", role="Study Identifier", datatype="string", bc_id="PARAMCD", origin="Assigned study identifier", controlled_terminology=None),
+        Variable(variable="USUBJID", dataset="ADPANEL", role="Unique Subject Identifier", datatype="string", bc_id="PARAMCD", origin="Assigned unique subject identifier", controlled_terminology=None),
+        Variable(variable="TIME_POINT", dataset="ADPANEL", role="Time Point Index", datatype="integer", bc_id="PFS", origin="Derived time point sequence number", controlled_terminology=None),
+        Variable(variable="AVAL_DAY", dataset="ADPANEL", role="Analysis Value (Days)", datatype="integer", bc_id="PFS", origin="Derived analysis day from randomization", controlled_terminology=None),
+        Variable(variable="ON_THERAPY", dataset="ADPANEL", role="New Therapy Status Flag", datatype="integer", bc_id="PFS", origin="Derived from new anti-cancer therapy start date", controlled_terminology="0 = No, 1 = Yes"),
+        Variable(variable="PROGRESSION", dataset="ADPANEL", role="Progression Status Flag", datatype="integer", bc_id="PFS", origin="Derived from progression date", controlled_terminology="0 = No, 1 = Yes"),
+        Variable(variable="ALIVE", dataset="ADPANEL", role="Alive Status Flag", datatype="integer", bc_id="OS", origin="Derived from survival status", controlled_terminology="0 = Dead, 1 = Alive"),
+        Variable(variable="CENSORED", dataset="ADPANEL", role="Censor Flag", datatype="integer", bc_id="PFS", origin="Derived from follow-up censoring", controlled_terminology="0 = No, 1 = Yes")
     ]
     
     for v in var_seeds:

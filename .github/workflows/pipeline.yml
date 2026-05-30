@@ -1,0 +1,49 @@
+name: Clinical Metadata & Data Pipeline CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    - name: Set up Python 3.11
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+        cache: 'pip'
+
+    - name: Install System Dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libgomp1 sqlite3
+
+    - name: Install Python Dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: Run E2E Test Pipeline & Compliance Gate
+      run: |
+        python tests/test_pipeline.py
+
+    - name: Upload Generated Submission Artifacts
+      if: success()
+      uses: actions/upload-artifact@v4
+      with:
+        name: IMpower150-Submission-Package
+        path: |
+          outputs/submission/define.xml
+          outputs/submission/sdrg.jsonld
+          outputs/submission/sdrg.html
+          outputs/submission/ard.json
+          outputs/submission/m11_protocol.json
+          outputs/submission/lineage_ontology.ttl
+          outputs/submission/lineage_report.html

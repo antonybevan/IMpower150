@@ -67,8 +67,8 @@ class QCEngine:
                                     "run_id": run_id,
                                     "usubjid": "UNKNOWN",
                                     "rule_source": "CORE",
-                                    "cdisc_rule_id": "SDTMIG.CG0001",
-                                    "severity": "critical",
+                                    "cdisc_rule_id": "CORE-000006",
+                                    "severity": "error",
                                     "target_variable": f"{f.split('.')[0].upper()}.USUBJID",
                                     "clinical_narrative": f"Dataset {f}: Missing Unique Subject Identifier (USUBJID) at record {idx}."
                                 })
@@ -80,8 +80,8 @@ class QCEngine:
                                     "run_id": run_id,
                                     "usubjid": usubjid,
                                     "rule_source": "CORE",
-                                    "cdisc_rule_id": "SDTMIG.CG0002",
-                                    "severity": "major",
+                                    "cdisc_rule_id": "CORE-000008",
+                                    "severity": "error",
                                     "target_variable": f"{f.split('.')[0].upper()}.PARAMCD",
                                     "clinical_narrative": f"Subject {usubjid}: Missing Parameter Code (PARAMCD) at record {idx}."
                                 })
@@ -93,8 +93,8 @@ class QCEngine:
                                     "run_id": run_id,
                                     "usubjid": usubjid,
                                     "rule_source": "CORE",
-                                    "cdisc_rule_id": "SDTMIG.CG0002",
-                                    "severity": "major",
+                                    "cdisc_rule_id": "CORE-000012",
+                                    "severity": "warning",
                                     "target_variable": "SV.SVSTDTC",
                                     "clinical_narrative": f"Subject {usubjid}: Missed visit study date format mismatch or missing entry for Cycle 2 Day 1."
                                 })
@@ -176,6 +176,153 @@ class QCEngine:
             self._insert_finding(f)
             
         print(f"[QCEngine] Level 2 oncology-specific checks completed. Logged {len(findings)} findings.")
+
+    def run_level4_cross_dataset_integrity(self, run_id):
+        """Executes Level 4 cross-dataset referential integrity checks (H9: ADTTE ↔ ADSL ↔ ADRS ↔ ADDOR)."""
+        findings = []
+        
+        # Load ADSL USUBJIDs as the reference population
+        adsl_path = os.path.join(self.dataset_dir, 'adsl.json')
+        if not os.path.exists(adsl_path):
+            print(f"[QCEngine] Level 4 skipped: ADSL dataset not found at {adsl_path}.")
+            return
+        
+        try:
+            with open(adsl_path, 'r') as f:
+                adsl_data = json.load(f)
+            ig_adsl = adsl_data.get("clinicalData", {}).get("itemGroupData", {}).get("IG.ADSL", {})
+            adsl_cols = [col["name"] for col in ig_adsl.get("columns", [])]
+            adsl_usubjid_idx = adsl_cols.index("USUBJID") if "USUBJID" in adsl_cols else -1
+            adsl_subjects = set()
+            if adsl_usubjid_idx != -1:
+                for row in ig_adsl.get("itemData", []):
+                    adsl_subjects.add(row[adsl_usubjid_idx])
+        except Exception as e:
+            print(f"[QCEngine] Level 4 error loading ADSL: {e}")
+            return
+        
+        # Check each analysis dataset for orphaned USUBJIDs (not in ADSL)
+        for ds_name in ['adtte', 'addor', 'adrs']:
+            ds_path = os.path.join(self.dataset_dir, f'{ds_name}.json')
+            if not os.path.exists(ds_path):
+                continue
+            try:
+                with open(ds_path, 'r') as f:
+                    ds_data = json.load(f)
+                ig_data = ds_data.get("clinicalData", {}).get("itemGroupData", {})
+                for ig_key, ig_val in ig_data.items():
+                    cols = [col["name"] for col in ig_val.get("columns", [])]
+                    uid_idx = cols.index("USUBJID") if "USUBJID" in cols else -1
+                    if uid_idx == -1:
+                        continue
+                    ds_subjects = set()
+                    for row in ig_val.get("itemData", []):
+                        ds_subjects.add(row[uid_idx])
+                    
+                    # Orphaned subjects in analysis dataset but not in ADSL
+                    orphaned = ds_subjects - adsl_subjects
+                    for subj in sorted(orphaned):
+                        findings.append({
+                            "finding_id": f"L4_{run_id}_{ds_name}_orphan_{subj}",
+                            "run_id": run_id,
+                            "usubjid": subj,
+                            "rule_source": "CROSS_DATASET",
+                            "cdisc_rule_id": "CORE-000042",
+                            "severity": "error",
+                            "target_variable": f"{ds_name.upper()}.USUBJID",
+                            "clinical_narrative": f"Subject {subj} exists in {ds_name.upper()} but not in ADSL (referential integrity violation)."
+                        })
+            except Exception as e:
+                print(f"[QCEngine] Level 4 error processing {ds_name}: {e}")
+        
+        for f in findings:
+            self._insert_finding(f)
+        
+        print(f"[QCEngine] Level 4 cross-dataset integrity checks completed. Logged {len(findings)} findings.")
+
+    def run_level5_controlled_terminology_validation(self, run_id):
+        """Executes Level 5 Controlled Terminology Validation (M14) against NCI EVS standards."""
+        import sqlite3
+        findings = []
+        
+        # Connect to SQLite to load Biomedical Concepts mapping
+        try:
+            conn_sqlite = sqlite3.connect(self.db_path)
+            cursor = conn_sqlite.cursor()
+            cursor.execute("SELECT bc_id, cosmos_bc_id, parent_bc_id FROM biomedical_concepts")
+            bc_data = cursor.fetchall()
+            conn_sqlite.close()
+            
+            # Map concept info
+            bc_map = {}
+            for bc_id, cosmos_id, parent_id in bc_data:
+                bc_map[bc_id] = {
+                    "cosmos_id": cosmos_id,
+                    "parent_id": parent_id
+                }
+        except Exception as e:
+            print(f"[QCEngine] Level 5 error querying SQLite concepts: {e}")
+            return
+            
+        # Scan datasets for PARAMCD values
+        for ds_name in ['adtte', 'addor', 'adrs']:
+            ds_path = os.path.join(self.dataset_dir, f'{ds_name}.json')
+            if not os.path.exists(ds_path):
+                continue
+            try:
+                with open(ds_path, 'r') as f:
+                    ds_data = json.load(f)
+                ig_data = ds_data.get("clinicalData", {}).get("itemGroupData", {})
+                for ig_key, ig_val in ig_data.items():
+                    cols = [col["name"] for col in ig_val.get("columns", [])]
+                    paramcd_idx = cols.index("PARAMCD") if "PARAMCD" in cols else -1
+                    if paramcd_idx == -1:
+                        continue
+                    
+                    seen_paramcds = set()
+                    for row in ig_val.get("itemData", []):
+                        param = row[paramcd_idx]
+                        if param:
+                            seen_paramcds.add(param)
+                            
+                    for param in sorted(seen_paramcds):
+                        # Validate paramcd against NCI Thesaurus mappings
+                        is_valid = False
+                        reason = ""
+                        
+                        if param in bc_map:
+                            info = bc_map[param]
+                            if info["cosmos_id"]:
+                                is_valid = True
+                            elif info["parent_id"] and info["parent_id"] in bc_map:
+                                parent_info = bc_map[info["parent_id"]]
+                                if parent_info["cosmos_id"]:
+                                    is_valid = True
+                                else:
+                                    reason = f"Concept '{param}' inherits from parent '{info['parent_id']}' which has no NCI EVS mapping."
+                            else:
+                                reason = f"Concept '{param}' is registered but has no NCI EVS mapping or parent concept mapping."
+                        else:
+                            reason = f"PARAMCD '{param}' is completely unregistered in the Biomedical Concepts repository."
+                            
+                        if not is_valid:
+                            findings.append({
+                                "finding_id": f"L5_{run_id}_{ds_name}_evs_{param}",
+                                "run_id": run_id,
+                                "usubjid": "SYSTEM",
+                                "rule_source": "EVS_CT",
+                                "cdisc_rule_id": "CORE-000080",
+                                "severity": "warning",
+                                "target_variable": f"{ds_name.upper()}.PARAMCD",
+                                "clinical_narrative": f"Controlled Terminology Alert: {reason}"
+                            })
+            except Exception as e:
+                print(f"[QCEngine] Level 5 error processing {ds_name}: {e}")
+                
+        for f in findings:
+            self._insert_finding(f)
+            
+        print(f"[QCEngine] Level 5 controlled terminology checks completed. Logged {len(findings)} findings.")
 
     def run_level3_explainable_narratives(self, run_id):
         """Generates Level 3 Explainable Root-Cause Narratives by querying graph relationships (lineage tracing)."""

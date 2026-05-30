@@ -2,7 +2,7 @@ import os
 import yaml
 import json
 import datetime
-from sqlalchemy import create_engine, Column, Integer, String, Text, ForeignKey, DateTime, Float, event
+from sqlalchemy import create_engine, Column, Integer, String, Text, ForeignKey, DateTime, Float, event, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import sessionmaker, relationship, declarative_base
 
@@ -35,6 +35,17 @@ class BiomedicalConcept(Base):
     sdtmig_class = Column(String(50))
     coding_system = Column(String(100))
     bc_definition = Column(Text)
+    parent_bc_id = Column(String(50), ForeignKey('biomedical_concepts.bc_id'), nullable=True)
+
+# 2b. Dataset Specialization Table
+class DatasetSpecialization(Base):
+    __tablename__ = 'dataset_specializations'
+    
+    specialization_id = Column(String(50), primary_key=True)
+    bc_id = Column(String(50), ForeignKey('biomedical_concepts.bc_id'))
+    domain = Column(String(10), nullable=False) # e.g. SDTM.RS, ADaM.ADTTE
+    variable_name = Column(String(50), nullable=False)
+    role = Column(String(100))
 
 # 3. Endpoint Definition Table
 class EndpointDefinition(Base):
@@ -192,6 +203,24 @@ def init_database(db_path='metadata.db', config_path='study_config.yaml'):
         print(f"[Database] [Warning] Alembic migration failed; falling back to SQLAlchemy metadata creation: {e}")
         Base.metadata.create_all(engine)
         
+    # Ensure parent_bc_id column and dataset_specializations table exist dynamically (H8)
+    try:
+        with engine.begin() as conn:
+            # Check if parent_bc_id column exists
+            res = conn.execute(text("PRAGMA table_info(biomedical_concepts);")).fetchall()
+            columns = [r[1] for r in res]
+            if "parent_bc_id" not in columns:
+                conn.execute(text("ALTER TABLE biomedical_concepts ADD COLUMN parent_bc_id VARCHAR(50);"))
+                print("[Database] Dynamic migration: Added parent_bc_id column to biomedical_concepts.")
+                
+            # Check if dataset_specializations table exists
+            tbl_res = conn.execute(text("SELECT name FROM sqlite_master WHERE type='table' AND name='dataset_specializations';")).fetchone()
+            if not tbl_res:
+                Base.metadata.tables['dataset_specializations'].create(conn)
+                print("[Database] Dynamic migration: Created dataset_specializations table.")
+    except Exception as ex:
+        print(f"[Database] Dynamic schema synchronization warning: {ex}")
+        
     Session = sessionmaker(bind=engine)
     session = Session()
     
@@ -261,6 +290,36 @@ def init_database(db_path='metadata.db', config_path='study_config.yaml'):
             sdtmig_class="SPECIAL PURPOSE", 
             coding_system="NCI Thesaurus",
             bc_definition="A unique short code representation of the parameter being evaluated (e.g. PFS, OS, iPFS)."
+        ),
+        BiomedicalConcept(
+            bc_id="PFS_EMA", 
+            bc_name="Progression-Free Survival (EMA criteria)", 
+            bc_category="event", 
+            cosmos_bc_id="C9343", 
+            sdtmig_class="EVENTS", 
+            coding_system="NCI Thesaurus",
+            bc_definition="Progression-free survival derived using EMA censoring rules.",
+            parent_bc_id="PFS"
+        ),
+        BiomedicalConcept(
+            bc_id="PFS_BICR", 
+            bc_name="Progression-Free Survival (BICR assessor)", 
+            bc_category="event", 
+            cosmos_bc_id="C9343", 
+            sdtmig_class="EVENTS", 
+            coding_system="NCI Thesaurus",
+            bc_definition="Progression-free survival derived using Blinded Independent Central Review assessor assessments.",
+            parent_bc_id="PFS"
+        ),
+        BiomedicalConcept(
+            bc_id="OS_BICR", 
+            bc_name="Overall Survival (BICR assessor)", 
+            bc_category="event", 
+            cosmos_bc_id="C82515", 
+            sdtmig_class="EVENTS", 
+            coding_system="NCI Thesaurus",
+            bc_definition="Overall survival derived using Blinded Independent Central Review assessor assessments.",
+            parent_bc_id="OS"
         )
     ]
     
@@ -268,7 +327,19 @@ def init_database(db_path='metadata.db', config_path='study_config.yaml'):
     if session.query(BiomedicalConcept).count() == 0:
         session.bulk_save_objects(bc_seeds)
         session.commit()
-        print("[Database] Seeded 7 COSMoS Biomedical Concepts.")
+        print("[Database] Seeded 10 COSMoS Biomedical Concepts with inheritance.")
+
+    # Seed Dataset Specializations
+    ds_specializations = [
+        DatasetSpecialization(specialization_id="DS_ADTTE_PFS", bc_id="PFS", domain="ADaM.ADTTE", variable_name="AVAL", role="Analysis Value for PFS in days"),
+        DatasetSpecialization(specialization_id="DS_ADTTE_OS", bc_id="OS", domain="ADaM.ADTTE", variable_name="AVAL", role="Analysis Value for OS in days"),
+        DatasetSpecialization(specialization_id="DS_ADRS_BOR", bc_id="BOR", domain="ADaM.ADRS", variable_name="AVAL", role="Analysis Value for Best Overall Response"),
+        DatasetSpecialization(specialization_id="DS_ADSL_ARM", bc_id="PARAMCD", domain="ADaM.ADSL", variable_name="ARM", role="Description of actual treatment arm")
+    ]
+    if session.query(DatasetSpecialization).count() == 0:
+        session.bulk_save_objects(ds_specializations)
+        session.commit()
+        print("[Database] Seeded 4 Dataset Specializations linking concepts to variables.")
         
     # Read study_config.yaml for M11 Protocol Seeds
     if os.path.exists(config_path):
@@ -388,10 +459,24 @@ def init_database(db_path='metadata.db', config_path='study_config.yaml'):
         var_seeds = [
             Variable(variable="AVAL", dataset="ADSL", role="Analysis Value", datatype="float", bc_id="OS", origin="Derived from Rand date and death date", controlled_terminology=None),
             Variable(variable="CNSR", dataset="ADSL", role="Censor Flag", datatype="integer", bc_id="OS", origin="Derived from survival status", controlled_terminology="0 = Event, 1 = Censored"),
+            Variable(variable="ARMCD", dataset="ADSL", role="Treatment Arm Code", datatype="string", bc_id="PARAMCD", origin="Predefined", controlled_terminology="A, B, C"),
+            Variable(variable="WTFL", dataset="ADSL", role="Wild-Type Population Flag", datatype="string", bc_id="PARAMCD", origin="Predefined", controlled_terminology="Y, N"),
+            Variable(variable="TEFFFL", dataset="ADSL", role="Teff-High Biomarker Flag", datatype="string", bc_id="PARAMCD", origin="Predefined", controlled_terminology="Y, N"),
+            Variable(variable="PSYFL", dataset="ADSL", role="Principal Stratum Flag", datatype="string", bc_id="PARAMCD", origin="Derived", controlled_terminology="Y, N"),
             Variable(variable="AVAL", dataset="ADTTE", role="Analysis Value (Days)", datatype="float", bc_id="PFS", origin="Derived", controlled_terminology=None),
             Variable(variable="CNSR", dataset="ADTTE", role="Censor Flag", datatype="integer", bc_id="PFS", origin="Derived based on SAP criteria", controlled_terminology="0 = Event, 1 = Censored"),
             Variable(variable="PARAMCD", dataset="ADTTE", role="Parameter Code", datatype="string", bc_id="PARAMCD", origin="Predefined", controlled_terminology="PFS, OS, iPFS, PFS_EMA"),
-            Variable(variable="RSORRES", dataset="RS", role="Response Result", datatype="string", bc_id="BOR", origin="Investigator Assessment", controlled_terminology="CR, PR, SD, PD, NE")
+            Variable(variable="RSORRES", dataset="RS", role="Response Result", datatype="string", bc_id="BOR", origin="Investigator Assessment", controlled_terminology="CR, PR, SD, PD, NE"),
+            # ADPANEL Longitudinal Panel variables
+            Variable(variable="STUDYID", dataset="ADPANEL", role="Study Identifier", datatype="string", bc_id="PARAMCD", origin="Assigned study identifier", controlled_terminology=None),
+            Variable(variable="USUBJID", dataset="ADPANEL", role="Unique Subject Identifier", datatype="string", bc_id="PARAMCD", origin="Assigned unique subject identifier", controlled_terminology=None),
+            Variable(variable="TIME_POINT", dataset="ADPANEL", role="Time Point Index", datatype="integer", bc_id="PFS", origin="Derived time point sequence number", controlled_terminology=None),
+            Variable(variable="AVAL_DAY", dataset="ADPANEL", role="Analysis Value (Days)", datatype="integer", bc_id="PFS", origin="Derived analysis day from randomization", controlled_terminology=None),
+            Variable(variable="ON_THERAPY", dataset="ADPANEL", role="New Therapy Status Flag", datatype="integer", bc_id="PFS", origin="Derived from new anti-cancer therapy start date", controlled_terminology="0 = No, 1 = Yes"),
+            Variable(variable="PROGRESSION", dataset="ADPANEL", role="Progression Status Flag", datatype="integer", bc_id="PFS", origin="Derived from progression date", controlled_terminology="0 = No, 1 = Yes"),
+            Variable(variable="ALIVE", dataset="ADPANEL", role="Alive Status Flag", datatype="integer", bc_id="OS", origin="Derived from survival status", controlled_terminology="0 = Dead, 1 = Alive"),
+            Variable(variable="CENSORED", dataset="ADPANEL", role="Censor Flag", datatype="integer", bc_id="PFS", origin="Derived from follow-up censoring", controlled_terminology="0 = No, 1 = Yes"),
+            Variable(variable="SW_IPCW", dataset="ADPANEL", role="IPCW Stabilized Weight", datatype="float", bc_id="PFS", origin="Derived from time-varying treatment and censoring models", controlled_terminology=None)
         ]
         for v in var_seeds:
             if session.query(Variable).filter_by(variable=v.variable, dataset=v.dataset).count() == 0:

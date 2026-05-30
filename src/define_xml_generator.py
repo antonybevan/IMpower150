@@ -57,6 +57,11 @@ class SubmissionGenerator:
 
         # 2. Add ItemGroupDefs (Datasets metadata)
         datasets_metadata = {
+            "ADSL": {
+                "Label": "Analysis Dataset for Subject Level",
+                "Structure": "One record per subject",
+                "Purpose": "Analysis"
+            },
             "ADTTE": {
                 "Label": "Analysis Dataset for Time-to-Event",
                 "Structure": "One record per subject per parameter",
@@ -70,6 +75,16 @@ class SubmissionGenerator:
             "ADDOR": {
                 "Label": "Analysis Dataset for Duration of Response",
                 "Structure": "One record per subject per parameter",
+                "Purpose": "Analysis"
+            },
+            "ADPANEL": {
+                "Label": "Analysis Dataset for Longitudinal Panel Data",
+                "Structure": "One record per subject per time point",
+                "Purpose": "Analysis"
+            },
+            "ADICE": {
+                "Label": "Analysis Dataset for Intercurrent Events",
+                "Structure": "One record per subject per intercurrent event",
                 "Purpose": "Analysis"
             }
         }
@@ -157,7 +172,7 @@ class SubmissionGenerator:
             "Name": "Parameter Code List",
             "DataType": "text"
         })
-        for val, desc in [("PFS", "Progression-Free Survival"), ("OS", "Overall Survival"), ("iPFS", "immune Progression-Free Survival"), ("DOR", "Duration of Response"), ("BOR", "Best Overall Response"), ("PFS_EMA", "Progression-Free Survival (EMA Censoring)")]:
+        for val, desc in [("PFS", "Progression-Free Survival"), ("OS", "Overall Survival"), ("iPFS", "immune Progression-Free Survival"), ("DOR", "Duration of Response"), ("BOR", "Best Overall Response"), ("PFS_EMA", "Progression-Free Survival (EMA Censoring)"), ("PFS_BICR", "PFS by Blinded Independent Central Review"), ("OS_BICR", "OS by Blinded Independent Central Review")]:
             cli = ET.SubElement(paramcd_cl, f"{{{ODM_NS}}}CodeListItem", {"CodedValue": val})
             dec = ET.SubElement(cli, f"{{{ODM_NS}}}Decode")
             ET.SubElement(dec, f"{{{ODM_NS}}}TranslatedText", {"xml:lang": "en"}).text = desc
@@ -330,7 +345,7 @@ class SubmissionGenerator:
                 elif oid == 'CL.CNSR':
                     cnsr_items = [item.get('CodedValue') for item in elem.findall(f"{{{ODM_NS}}}CodeListItem")]
                     
-        expected_paramcds = {"PFS", "OS", "iPFS", "DOR", "BOR", "PFS_EMA"}
+        expected_paramcds = {"PFS", "OS", "iPFS", "DOR", "BOR", "PFS_EMA", "PFS_BICR", "OS_BICR"}
         for pc in expected_paramcds:
             if pc not in paramcd_items:
                 errors.append(f"Missing expected PARAMCD in CodeList: {pc}")

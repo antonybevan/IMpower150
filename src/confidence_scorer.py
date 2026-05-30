@@ -1,8 +1,8 @@
 class ConfidenceScorer:
     """Phase 9 4-signal composite confidence scorer for Roche Protocol GO29436."""
     def __init__(self):
-        self.valid_concepts = {"OS", "PFS", "iPFS", "BOR", "DOR", "ORR", "PARAMCD", "PFS_EMA"}
-        self.valid_variables = {"AVAL", "CNSR", "ORR_FL", "PARAMCD"}
+        self.valid_concepts = {"OS", "PFS", "iPFS", "BOR", "DOR", "ORR", "PARAMCD", "PFS_EMA", "PFS_BICR", "OS_BICR"}
+        self.valid_variables = {"AVAL", "CNSR", "ORR_FL", "PARAMCD", "ARMCD", "WTFL", "TEFFFL", "ATERM"}
 
     def compute_score(self, rule_candidate, source_chunk):
         """Computes structural and clinical conformance confidence signals for a rule."""

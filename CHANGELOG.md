@@ -7,6 +7,25 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [5.0.0] — 2026-05-30
+
+### Added
+- **FDA-Grade Crossover & Estimand Trackers (🔴 Critical & 🟡 High)**:
+  - Implemented standard **ADSL** (Analysis Dataset for Subject Level) with demographics, 3-arm balanced randomization, `WTFL`, `TEFFFL` and `PSYFL` (Principal Stratum Flag) estimand population flags.
+  - Implemented **ADICE** (Analysis Dataset for Intercurrent Events) OCCDS structure to record 82 intercurrent events (e.g. initiation of subsequent non-protocol cancer therapies) across subjects, supporting E9(R1) Treatment Policy estimand strategy alignment.
+  - Implemented stabilized Inverse Probability of Censoring Weighting (`SW_IPCW`) columns in **ADPANEL** (Longitudinal Panel) using baseline demographics (ECOG) and time-varying indicators (`ON_NEW_THERAPY`, `PROGRESSION`).
+- **Standard Exporters & Statistical Tracing (🟡 High & 🟢 Medium)**:
+  - Created compliant **CDISC ARS v1.0 Statistical Results** (`ard.json`) capturing hazard ratios, log-rank p-values, Kaplan-Meier survival rates, and median survival.
+  - Created **ICH M11 digital protocol** (`m11_protocol.json`) serializing objectives, estimands, scan frequencies, and visits.
+  - Added concept inheritance mapping (`parent_bc_id`) to **Biomedical Concepts** in `models.py` and exported concept relationships (`rdfs:subClassOf`) with W3C SHACL shape validation constraints in the RDF ontology.
+  - Aligned QC rule IDs to standard CDISC CORE rules taxonomy (`CORE-000xxx`).
+  - Added Level 4 Cross-dataset Referential Integrity checks and Level 5 NCI EVS Controlled Terminology Validation directly within the `QCEngine`.
+- **Reproducibility & Timing Instrumentation (🟢 Medium)**:
+  - Authored a multi-stage `Dockerfile`, `docker-compose.yml`, and a GitHub Actions workflow (`pipeline.yml`) incorporating compliance quality gates.
+  - Integrated precision stopwatches around each pipeline stage, printing a comprehensive, human-readable execution timing summary.
+
+---
+
 ## [4.0.0] — 2026-05-30
 
 ### Added
@@ -51,12 +70,12 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed
 - 13 metadata audit gaps resolved (GAP-01 through GAP-13):
-  - GAP-01: ARM first-class entity registration (AnalysisResult table)
-  - GAP-02: Protocol objective → endpoint linking
-  - GAP-03: BICR parallel rule set (6 BICR-assessor rules added)
-  - GAP-04: Where clause entity seeding (WhereClause table)
-  - GAP-05: Estimand attribute completeness
-  - GAP-06 through GAP-13: Variable metadata, SAS template completeness
+- GAP-01: ARM first-class entity registration (AnalysisResult table)
+- GAP-02: Protocol objective → endpoint linking
+- GAP-03: BICR parallel rule set (6 BICR-assessor rules added)
+- GAP-04: Where clause entity seeding (WhereClause table)
+- GAP-05: Estimand attribute completeness
+- GAP-06 through GAP-13: Variable metadata, SAS template completeness
 
 ---
 
